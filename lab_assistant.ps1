@@ -169,7 +169,7 @@ $documentos = CarregarDocumentosDoCSV
 
 # Criar janela WPF
 $window = New-Object System.Windows.Window
-$window.Title = "Documentos"
+$window.Title = "Lab Assistant"
 $window.Width = 500
 $window.Height = 650
 
