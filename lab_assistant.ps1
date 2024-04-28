@@ -26,22 +26,31 @@ function SalvarDocumentosNoCSV {
     $documentos | Export-Csv -Path $csvPath -NoTypeInformation
 }
 
-# Função para abrir um arquivo com o aplicativo padrão
+# Função para abrir um arquivo ou diretório com o aplicativo padrão
 function AbrirArquivo {
     param($caminho)
 
     if (-not [string]::IsNullOrWhiteSpace($caminho)) {
-        if (Test-Path $caminho -PathType Leaf) {
-            Start-Process $caminho
+        if (Test-Path $caminho) {
+            if (Test-Path $caminho -PathType Leaf) {
+                Start-Process $caminho
+            }
+            elseif (Test-Path $caminho -PathType Container) {
+                Invoke-Item $caminho
+            }
+            else {
+                Write-Host "O caminho especificado não corresponde a um arquivo ou diretório existente: $caminho"
+            }
         }
         else {
-            Write-Host "O arquivo não existe: $caminho"
+            Write-Host "O arquivo ou diretório não existe: $caminho"
         }
     }
     else {
-        Write-Host "Caminho do arquivo não especificado."
+        Write-Host "Caminho do arquivo ou diretório não especificado."
     }
 }
+
 
 # Função para carregar todos os documentos na lista
 function CarregarDocumentos {
@@ -243,6 +252,19 @@ $listBox = New-Object System.Windows.Controls.ListBox
 $listBox.Width = 450
 $listBox.Height = 200
 $listBox.Margin = "0,10,0,0"
+
+# Evento MouseDoubleClick para abrir o arquivo selecionado ao dar duplo clique
+$listBox.Add_MouseDoubleClick({
+        $indiceSelecionado = $listBox.SelectedIndex
+        if ($indiceSelecionado -ge 0) {
+            $nomeSelecionado = $listBox.SelectedItem
+            $caminho = ($documentos | Where-Object { $_.Nome -eq $nomeSelecionado }).Caminho
+            AbrirArquivo $caminho
+        }
+        else {
+            Write-Host "Nenhum arquivo selecionado."
+        }
+    })
 
 # Evento KeyDown da barra de pesquisa
 $searchBox.Add_KeyDown({
