@@ -8,7 +8,8 @@ function CarregarDocumentosDoCSV {
         # Tentar importar o arquivo CSV
         try {
             $documentos = Import-Csv -Path $csvPath -Encoding Default
-        } catch {
+        }
+        catch {
             Write-Host "Erro ao carregar o arquivo CSV: $_"
         }
     }
@@ -23,15 +24,19 @@ function AbrirArquivo {
         try {
             if (Test-Path $caminho -PathType Leaf) {
                 Start-Process -FilePath $caminho
-            } elseif (Test-Path $caminho -PathType Container) {
+            }
+            elseif (Test-Path $caminho -PathType Container) {
                 Invoke-Item -Path $caminho
-            } else {
+            }
+            else {
                 Write-Host "Caminho inválido ou não encontrado: $caminho"
             }
-        } catch {
+        }
+        catch {
             Write-Host "Erro ao abrir o arquivo ou diretório: $_"
         }
-    } else {
+    }
+    else {
         Write-Host "Caminho do arquivo ou diretório não especificado."
     }
 }
@@ -80,7 +85,8 @@ function Load-CSVData {
         # Tentar importar o arquivo CSV
         try {
             $csvData = Import-Csv -Path $csvPath -Encoding UTF8
-        } catch {
+        }
+        catch {
             Write-Host "Erro ao carregar o arquivo CSV: $_"
         }
     }
@@ -106,13 +112,13 @@ function Show-GUI {
     $buttonAdd.VerticalContentAlignment = "Center"
     $buttonAdd.ToolTip = "Adicionar novo item"
     $buttonAdd.Add_Click({
-        $newRow = New-Object PSObject -Property @{
-            Nome = ""
-            Caminho = ""
-        }
-        $global:csvData += $newRow
-        $datagrid.ItemsSource = $global:csvData
-    })
+            $newRow = New-Object PSObject -Property @{
+                Nome    = ""
+                Caminho = ""
+            }
+            $global:csvData += $newRow
+            $datagrid.ItemsSource = $global:csvData
+        })
 
     $buttonDelete = New-Object System.Windows.Controls.Button
     $buttonDelete.Content = "- Apagar"
@@ -120,12 +126,11 @@ function Show-GUI {
     $buttonDelete.VerticalContentAlignment = "Center"
     $buttonDelete.ToolTip = "Apagar item selecionado"
     $buttonDelete.Add_Click({
-        if ($datagrid.SelectedItem -ne $null) {
-            $selectedIndex = $datagrid.SelectedIndex
-            $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
-            $datagrid.ItemsSource = $global:csvData
-        }
-    })
+            if ($null -ne $datagrid.SelectedItem) {
+                $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+                $datagrid.ItemsSource = $global:csvData
+            }
+        })
 
     $toolbar.Items.Add($buttonAdd)
     $toolbar.Items.Add($buttonDelete)
@@ -186,8 +191,8 @@ $btnAjustes = New-Object System.Windows.Controls.Button
 $btnAjustes.Content = "Ajustes"
 $btnAjustes.ToolTip = "Abrir editor de CSV"
 $btnAjustes.Add_Click({
-    OpenCSVEditor
-})
+        OpenCSVEditor
+    })
 
 # Adicionar botão à barra de ferramentas
 $toolBar.Items.Add($btnAjustes)
