@@ -1,29 +1,18 @@
-Add-Type -AssemblyName PresentationFramework
+﻿Add-Type -AssemblyName PresentationFramework
 
 # Função para carregar documentos do arquivo CSV
 function CarregarDocumentosDoCSV {
     $documentos = @()
     $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
     if (Test-Path $csvPath) {
-        $documentos = Import-Csv -Path $csvPath
+        # Tentar importar o arquivo CSV
+        try {
+            $documentos = Import-Csv -Path $csvPath -Encoding Default
+        } catch {
+            Write-Host "Erro ao carregar o arquivo CSV: $_"
+        }
     }
     return $documentos
-}
-
-# Função para salvar documento em arquivo CSV (adicionar)
-function AdicionarDocumentoNoCSV {
-    param($novoDocumento)
-    $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
-    $novoDocumento | Export-Csv -Path $csvPath -NoTypeInformation -Append
-    $global:documentos += $novoDocumento
-}
-
-
-# Função para salvar documentos em arquivo CSV (editar e apagar)
-function SalvarDocumentosNoCSV {
-    param($documentos)
-    $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
-    $documentos | Export-Csv -Path $csvPath -NoTypeInformation
 }
 
 # Função para abrir um arquivo ou diretório com o aplicativo padrão
@@ -31,36 +20,35 @@ function AbrirArquivo {
     param($caminho)
 
     if (-not [string]::IsNullOrWhiteSpace($caminho)) {
-        if (Test-Path $caminho) {
+        try {
             if (Test-Path $caminho -PathType Leaf) {
-                Start-Process $caminho
+                Start-Process -FilePath $caminho
+            } elseif (Test-Path $caminho -PathType Container) {
+                Invoke-Item -Path $caminho
+            } else {
+                Write-Host "Caminho inválido ou não encontrado: $caminho"
             }
-            elseif (Test-Path $caminho -PathType Container) {
-                Invoke-Item $caminho
-            }
-            else {
-                Write-Host "O caminho especificado não corresponde a um arquivo ou diretório existente: $caminho"
-            }
+        } catch {
+            Write-Host "Erro ao abrir o arquivo ou diretório: $_"
         }
-        else {
-            Write-Host "O arquivo ou diretório não existe: $caminho"
-        }
-    }
-    else {
+    } else {
         Write-Host "Caminho do arquivo ou diretório não especificado."
     }
 }
-
 
 # Função para carregar todos os documentos na lista
 function CarregarDocumentos {
     $listBox.Items.Clear()
     $global:documentos = CarregarDocumentosDoCSV
     foreach ($doc in $global:documentos) {
-        $listBox.Items.Add($doc.Nome)
+        # Converter o nome do documento para UTF-8
+        $utf8Nome = [System.Text.Encoding]::UTF8.GetBytes($doc.Nome)
+        $utf8Nome = [System.Text.Encoding]::UTF8.GetString($utf8Nome)
+
+        # Adicionar o documento à lista usando a codificação UTF-8
+        $listBox.Items.Add($utf8Nome)
     }
 }
-
 
 # Função para filtrar documentos com base no texto de pesquisa
 function FiltrarDocumentos {
@@ -84,93 +72,96 @@ function FiltrarDocumentos {
 }
 
 
-# Função para adicionar documento
-function AdicionarDocumento {
-    $novoNome = Show-InputBox "Digite o nome do novo documento:"
-    $novoCaminho = Show-InputBox "Digite o caminho do novo documento:"
-    if (-not [string]::IsNullOrWhiteSpace($novoNome) -and -not [string]::IsNullOrWhiteSpace($novoCaminho)) {
-        $novoDocumento = [PSCustomObject]@{
-            Nome    = $novoNome
-            Caminho = $novoCaminho
+# Função para carregar os dados do arquivo CSV
+function Load-CSVData {
+    $csvData = @()
+    $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
+    if (Test-Path $csvPath) {
+        # Tentar importar o arquivo CSV
+        try {
+            $csvData = Import-Csv -Path $csvPath -Encoding UTF8
+        } catch {
+            Write-Host "Erro ao carregar o arquivo CSV: $_"
         }
-        AdicionarDocumentoNoCSV $novoDocumento
-        CarregarDocumentos
     }
-    else {
-        Write-Host "Nome ou caminho do documento não podem ser vazios."
-    }
+    return $csvData
 }
 
-# Função para editar documento
-function EditarDocumento {
-    $indiceSelecionado = $listBox.SelectedIndex
-    if ($indiceSelecionado -ge 0) {
-        $nomeSelecionado = $listBox.SelectedItem
-        $novoNome = Show-InputBox "Digite o novo nome do documento '$nomeSelecionado':"
-        $novoCaminho = Show-InputBox "Digite o novo caminho do documento '$nomeSelecionado':"
-        if (-not [string]::IsNullOrWhiteSpace($novoNome) -and -not [string]::IsNullOrWhiteSpace($novoCaminho)) {
-            $documentoEditado = [PSCustomObject]@{
-                Nome    = $novoNome
-                Caminho = $novoCaminho
-            }
-            $documentos[$indiceSelecionado] = $documentoEditado
-            SalvarDocumentosNoCSV $documentos
-            CarregarDocumentos
-        }
-        else {
-            Write-Host "Nome ou caminho do documento não podem ser vazios."
-        }
-    }
-    else {
-        Write-Host "Nenhum documento selecionado para editar."
-    }
-}
-# Função para apagar documento
-function ApagarDocumento {
-    $indiceSelecionado = $listBox.SelectedIndex
-    if ($indiceSelecionado -ge 0) {
-        $documentoRemovido = $documentos[$indiceSelecionado]
-        $documentos = $documentos | Where-Object { $_ -ne $documentoRemovido }
-        SalvarDocumentosNoCSV $documentos
-        CarregarDocumentos
-    }
-    else {
-        Write-Host "Nenhum documento selecionado para apagar."
-    }
+# Função para salvar os dados no arquivo CSV
+function Save-CSVData {
+    $global:csvData | Export-Csv -Path documentos.csv -NoTypeInformation -Encoding UTF8
 }
 
-# Função para exibir uma caixa de diálogo de entrada
-function Show-InputBox {
-    param([string]$message)
-    $inputBox = New-Object -TypeName System.Windows.Forms.TextBox
-    $form = New-Object -TypeName System.Windows.Forms.Form
-    $form.Text = "Input Box"
-    $form.Height = 150
-    $form.Width = 300
-    $label = New-Object -TypeName System.Windows.Forms.Label
-    $label.Location = New-Object -TypeName System.Drawing.Point(10, 20)
-    $label.Size = New-Object -TypeName System.Drawing.Size(280, 20)
-    $label.Text = $message
-    $form.Controls.Add($label)
-    $inputBox.Location = New-Object -TypeName System.Drawing.Point(10, 50)
-    $inputBox.Size = New-Object -TypeName System.Drawing.Size(260, 20)
-    $form.Controls.Add($inputBox)
-    $okButton = New-Object -TypeName System.Windows.Forms.Button
-    $okButton.Location = New-Object -TypeName System.Drawing.Point(180, 80)
-    $okButton.Size = New-Object -TypeName System.Drawing.Size(90, 30)
-    $okButton.Text = "OK"
-    $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
-    $form.AcceptButton = $okButton
-    $form.Controls.Add($okButton)
-    $result = $form.ShowDialog()
-    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-        $form.Dispose()
-        return $inputBox.Text
-    }
-    else {
-        $form.Dispose()
-        return $null
-    }
+# Função para criar a GUI do editor de CSV
+function Show-GUI {
+    $window = New-Object System.Windows.Window
+    $window.Title = "Editor de CSV"
+    $window.WindowState = "Maximized"
+
+    $toolbar = New-Object System.Windows.Controls.ToolBar
+
+    $buttonAdd = New-Object System.Windows.Controls.Button
+    $buttonAdd.Content = "+ Adicionar"
+    $buttonAdd.FontSize = 12
+    $buttonAdd.VerticalContentAlignment = "Center"
+    $buttonAdd.ToolTip = "Adicionar novo item"
+    $buttonAdd.Add_Click({
+        $newRow = New-Object PSObject -Property @{
+            Nome = ""
+            Caminho = ""
+        }
+        $global:csvData += $newRow
+        $datagrid.ItemsSource = $global:csvData
+    })
+
+    $buttonDelete = New-Object System.Windows.Controls.Button
+    $buttonDelete.Content = "- Apagar"
+    $buttonDelete.FontSize = 12
+    $buttonDelete.VerticalContentAlignment = "Center"
+    $buttonDelete.ToolTip = "Apagar item selecionado"
+    $buttonDelete.Add_Click({
+        if ($datagrid.SelectedItem -ne $null) {
+            $selectedIndex = $datagrid.SelectedIndex
+            $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+            $datagrid.ItemsSource = $global:csvData
+        }
+    })
+
+    $toolbar.Items.Add($buttonAdd)
+    $toolbar.Items.Add($buttonDelete)
+    $toolbar.Items.Add($buttonSave)
+
+    $grid = New-Object System.Windows.Controls.Grid
+
+    $datagrid = New-Object System.Windows.Controls.DataGrid
+    $datagrid.AutoGenerateColumns = $true
+    $datagrid.ItemsSource = $global:csvData
+
+    $grid.Children.Add($datagrid)
+
+    $dockPanel = New-Object System.Windows.Controls.DockPanel
+    [System.Windows.Controls.DockPanel]::SetDock($toolbar, "Top")
+    [System.Windows.Controls.DockPanel]::SetDock($grid, "Bottom")
+    $dockPanel.Children.Add($toolbar)
+    $dockPanel.Children.Add($grid)
+
+    $window.Content = $dockPanel
+    $window.ShowDialog() | Out-Null
+}
+
+# Função para abrir a janela de edição de CSV ao clicar em "Ajustes"
+function OpenCSVEditor {
+    # Carregar os dados do arquivo CSV
+    $global:csvData = Load-CSVData
+
+    # Mostrar a GUI do editor de CSV
+    Show-GUI
+
+    # Salvar os dados no arquivo CSV ao fechar a janela de edição
+    Save-CSVData
+
+    # Carregar todos os documentos na lista ao iniciar o programa
+    CarregarDocumentos
 }
 
 # Lista de documentos
@@ -182,30 +173,26 @@ $window.Title = "Lab Assistant"
 $window.Width = 500
 $window.Height = 650
 
-# Criar barra de ferramentas (toolbar)
-$toolBar = New-Object System.Windows.Controls.ToolBar
-
-# Botão para adicionar documento
-$addButton = New-Object System.Windows.Controls.Button
-$addButton.Content = "Adicionar"
-$addButton.Add_Click({ AdicionarDocumento })
-$toolBar.Items.Add($addButton)
-
-# Botão para editar documento
-$editButton = New-Object System.Windows.Controls.Button
-$editButton.Content = "Editar"
-$editButton.Add_Click({ EditarDocumento })
-$toolBar.Items.Add($editButton)
-
-# Botão para apagar documento
-$deleteButton = New-Object System.Windows.Controls.Button
-$deleteButton.Content = "Apagar"
-$deleteButton.Add_Click({ ApagarDocumento })
-$toolBar.Items.Add($deleteButton)
-
-# Adicionar barra de ferramentas (dockbar) ao stackpanel
+# Criar stack panel
 $stackPanel = New-Object System.Windows.Controls.StackPanel
 $stackPanel.Orientation = [System.Windows.Controls.Orientation]::Vertical
+
+# Criar barra de ferramentas (dockbar)
+$toolBar = New-Object System.Windows.Controls.ToolBar
+$toolBar.Margin = "0,0,0,5"
+
+# Botão de ajustes
+$btnAjustes = New-Object System.Windows.Controls.Button
+$btnAjustes.Content = "Ajustes"
+$btnAjustes.ToolTip = "Abrir editor de CSV"
+$btnAjustes.Add_Click({
+    OpenCSVEditor
+})
+
+# Adicionar botão à barra de ferramentas
+$toolBar.Items.Add($btnAjustes)
+
+# Adicionar barra de ferramentas ao stack panel
 $stackPanel.Children.Add($toolBar)
 
 # Label para a barra de pesquisa
@@ -236,6 +223,7 @@ $searchButton = New-Object System.Windows.Controls.Button
 $searchButton.Content = "Filtrar"
 $searchButton.Width = 100
 $searchButton.Margin = "5,10,0,0"
+$searchButton.ToolTip = "Filtrar documentos"
 $searchButton.Add_Click({
         $termoPesquisa = $searchBox.Text.ToLower()
         FiltrarDocumentos $termoPesquisa
@@ -280,6 +268,7 @@ $button = New-Object System.Windows.Controls.Button
 $button.Content = "Abrir"
 $button.Width = 100
 $button.Margin = "5,10,0,0"
+$button.ToolTip = "Abrir documento selecionado"
 $button.Add_Click({
         $indiceSelecionado = $listBox.SelectedIndex
         if ($indiceSelecionado -ge 0) {
@@ -309,8 +298,10 @@ $spacer.Height = 20
 $stackPanel.Children.Add($spacer)
 
 # Adicionar imagem
-# $image = New-Object System.Windows.Controls.Image
-# $image.Source = [System.Windows.Media.Imaging.BitmapImage]::new([System.Uri]::new("H:\TE...
+$image = New-Object System.Windows.Controls.Image
+$imagePath = Join-Path -Path $PSScriptRoot -ChildPath "image.jpg"
+$image.Source = [System.Windows.Media.Imaging.BitmapImage]::new([System.Uri]::new($imagePath))
+$stackPanel.Children.Add($image)
 
 $window.Content = $stackPanel
 
