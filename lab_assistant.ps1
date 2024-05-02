@@ -5,9 +5,9 @@ function CarregarDocumentosDoCSV {
     $documentos = @()
     $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
     if (Test-Path $csvPath) {
-        # Tentar importar o arquivo CSV
+        # Tentar importar o arquivo CSV com codificação UTF-8
         try {
-            $documentos = Import-Csv -Path $csvPath -Encoding Default
+            $documentos = Import-Csv -Path $csvPath -Encoding UTF8
         }
         catch {
             Write-Host "Erro ao carregar o arquivo CSV: $_"
@@ -15,6 +15,28 @@ function CarregarDocumentosDoCSV {
     }
     return $documentos
 }
+
+# Função para salvar os dados no arquivo CSV com codificação UTF-8
+function Save-CSVData {
+    $global:csvData | Export-Csv -Path documentos.csv -NoTypeInformation -Encoding UTF8
+}
+
+# Função para carregar os dados do arquivo CSV com codificação UTF-8
+function Load-CSVData {
+    $csvData = @()
+    $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
+    if (Test-Path $csvPath) {
+        # Tentar importar o arquivo CSV com codificação UTF-8
+        try {
+            $csvData = Import-Csv -Path $csvPath -Encoding UTF8
+        }
+        catch {
+            Write-Host "Erro ao carregar o arquivo CSV: $_"
+        }
+    }
+    return $csvData
+}
+
 
 # Função para abrir um arquivo ou diretório com o aplicativo padrão
 function AbrirArquivo {
@@ -77,70 +99,130 @@ function FiltrarDocumentos {
 }
 
 
-# Função para carregar os dados do arquivo CSV
-function Load-CSVData {
-    $csvData = @()
-    $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
-    if (Test-Path $csvPath) {
-        # Tentar importar o arquivo CSV
-        try {
-            $csvData = Import-Csv -Path $csvPath -Encoding UTF8
-        }
-        catch {
-            Write-Host "Erro ao carregar o arquivo CSV: $_"
+# Função para selecionar o arquivo ou pasta e atualizar o DataGrid
+function Selecionar-ArquivoOuPasta {    
+    $row = $datagrid.SelectedItem
+    if ($row -ne $null) {
+        if ([string]::IsNullOrEmpty($row.Nome)) {
+            [System.Windows.MessageBox]::Show("Por favor, preencha primeiro a coluna 'Nome' antes de selecionar o arquivo ou pasta.", "Atenção", "OK", "Warning")
+        } else {
+            $caminho = SelecionarArquivoOuPasta "Selecionar arquivo ou pasta" $true
+            if ($caminho -ne $null) {
+                $row.Caminho = $caminho
+                $datagrid.Items.Refresh()
+            }
         }
     }
-    return $csvData
 }
 
-# Função para salvar os dados no arquivo CSV
-function Save-CSVData {
-    $global:csvData | Export-Csv -Path documentos.csv -NoTypeInformation -Encoding UTF8
-}
+
 
 # Função para criar a GUI do editor de CSV
 function Show-GUI {
     $window = New-Object System.Windows.Window
-    $window.Title = "Editor de CSV"
-    $window.WindowState = "Maximized"
-
+    $window.Title = "Editor de catálogo de documentos"
+    
     $toolbar = New-Object System.Windows.Controls.ToolBar
 
     $buttonAdd = New-Object System.Windows.Controls.Button
     $buttonAdd.Content = "+ Adicionar"
-    $buttonAdd.FontSize = 12
+    $buttonAdd.FontSize = 24
     $buttonAdd.VerticalContentAlignment = "Center"
     $buttonAdd.ToolTip = "Adicionar novo item"
     $buttonAdd.Add_Click({
             $newRow = New-Object PSObject -Property @{
-                Nome    = ""
-                Caminho = ""
+                Nome            = ""
+                Caminho         = ""
+                "Caminho completo" = ""
             }
             $global:csvData += $newRow
             $datagrid.ItemsSource = $global:csvData
         })
+    $buttonAdd.Margin = New-Object System.Windows.Thickness(0, 0, 10, 0) # Adiciona margem à direita
 
     $buttonDelete = New-Object System.Windows.Controls.Button
     $buttonDelete.Content = "- Apagar"
-    $buttonDelete.FontSize = 12
+    $buttonDelete.FontSize = 24
     $buttonDelete.VerticalContentAlignment = "Center"
     $buttonDelete.ToolTip = "Apagar item selecionado"
     $buttonDelete.Add_Click({
-            if ($null -ne $datagrid.SelectedItem) {
+        if ($null -ne $datagrid.SelectedItem) {
+            $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
+            if ($result -eq "Yes") {
                 $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
                 $datagrid.ItemsSource = $global:csvData
+                Save-CSVData
             }
-        })
+        }
+    })
+    $buttonDelete.Margin = New-Object System.Windows.Thickness(0, 0, 20, 0) # Adiciona margem à direita
 
     $toolbar.Items.Add($buttonAdd)
     $toolbar.Items.Add($buttonDelete)
-    $toolbar.Items.Add($buttonSave)
 
     $grid = New-Object System.Windows.Controls.Grid
 
     $datagrid = New-Object System.Windows.Controls.DataGrid
-    $datagrid.AutoGenerateColumns = $true
+    $datagrid.AutoGenerateColumns = $false
     $datagrid.ItemsSource = $global:csvData
+
+    # Coluna de Nome
+    $nomeColumn = New-Object System.Windows.Controls.DataGridTextColumn
+    $nomeColumn.Header = "Nome"
+    $nomeColumn.Binding = New-Object System.Windows.Data.Binding("Nome")
+    $datagrid.Columns.Add($nomeColumn)
+    
+    # Coluna de Caminho com botão para selecionar arquivo/pasta
+    $caminhoColumn = New-Object System.Windows.Controls.DataGridTemplateColumn
+    $caminhoColumn.Header = "Caminho"
+    $caminhoColumn.CellTemplate = New-Object System.Windows.DataTemplate
+    $caminhoFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Button])
+    $caminhoFactory.Name = "SelectButton"
+    $caminhoFactory.SetValue([System.Windows.Controls.Button]::ContentProperty, "Selecionar")
+
+    # Manipulador de evento para o botão "Selecionar" na coluna "Caminho"
+    $caminhoFactory.AddHandler([System.Windows.Controls.Button]::ClickEvent, [System.Windows.RoutedEventHandler]{
+            Selecionar-ArquivoOuPasta
+    })
+
+    $caminhoColumn.CellTemplate.VisualTree = $caminhoFactory
+    $datagrid.Columns.Add($caminhoColumn)
+
+    # Coluna de Caminho completo (vinculada à coluna "Caminho")
+    $nomeColumnLocal = New-Object System.Windows.Controls.DataGridTextColumn
+    $nomeColumnLocal.Header = "Caminho completo"
+    $nomeColumnLocal.Binding = New-Object System.Windows.Data.Binding("Caminho")
+    $datagrid.Columns.Add($nomeColumnLocal)
+
+    
+    # Evento para salvar automaticamente ao perder o foco da célula
+    $datagrid.Add_LostFocus({
+        # Finalizar qualquer edição em andamento no DataGrid
+        if ($datagrid.IsEditing) {
+            $datagrid.CommitEdit()
+        }
+        if ($datagrid.IsAddingNew) {
+            $datagrid.CommitEdit()
+        }
+
+        # Salvar automaticamente as alterações
+        Save-CSVData
+    })
+
+    # Adicionar evento KeyDown para o DataGrid
+    $datagrid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Key -eq "Delete") {
+            if ($null -ne $datagrid.SelectedItem) {
+                $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
+                if ($result -eq "Yes") {
+                    $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+                    $datagrid.ItemsSource = $global:csvData
+                    Save-CSVData
+                }
+            }
+        }
+    })
 
     $grid.Children.Add($datagrid)
 
@@ -153,6 +235,7 @@ function Show-GUI {
     $window.Content = $dockPanel
     $window.ShowDialog() | Out-Null
 }
+
 
 # Função para abrir a janela de edição de CSV ao clicar em "Ajustes"
 function OpenCSVEditor {
@@ -168,6 +251,8 @@ function OpenCSVEditor {
     # Carregar todos os documentos na lista ao iniciar o programa
     CarregarDocumentos
 }
+
+
 
 # Lista de documentos
 $documentos = CarregarDocumentosDoCSV
@@ -286,8 +371,6 @@ $button.Add_Click({
         }
     })
 
-# Carregar todos os documentos na lista ao iniciar o programa
-CarregarDocumentos
 
 # Adicionar controles à janela
 $stackPanel.Children.Add($searchLabel)
@@ -296,6 +379,9 @@ $stackPanel.Children.Add($searchButton)
 $stackPanel.Children.Add($listBoxLabel)
 $stackPanel.Children.Add($listBox)
 $stackPanel.Children.Add($button)
+
+# Carregar todos os documentos na lista ao iniciar o programa
+CarregarDocumentos
 
 # Adicionar espaço entre o botão "Abrir" e a imagem
 $spacer = New-Object System.Windows.Controls.Label
