@@ -1,13 +1,15 @@
-﻿Add-Type -AssemblyName PresentationFramework
+﻿# Adicionar os assemblies necessários
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName System.Windows.Forms
 
 # Função para carregar documentos do arquivo CSV
 function CarregarDocumentosDoCSV {
     $documentos = @()
     $csvPath = Join-Path -Path $PSScriptRoot -ChildPath "documentos.csv"
     if (Test-Path $csvPath) {
-        # Tentar importar o arquivo CSV com codificação UTF-8
+        # Tentar importar o arquivo CSV com codificação Default
         try {
-            $documentos = Import-Csv -Path $csvPath -Encoding UTF8
+            $documentos = Import-Csv -Path $csvPath -Encoding Default
         }
         catch {
             Write-Host "Erro ao carregar o arquivo CSV: $_"
@@ -18,7 +20,7 @@ function CarregarDocumentosDoCSV {
 
 # Função para salvar os dados no arquivo CSV com codificação UTF-8
 function Save-CSVData {
-    $global:csvData | Export-Csv -Path documentos.csv -NoTypeInformation -Encoding UTF8
+    $script:global:csvData | Export-Csv -Path documentos.csv -NoTypeInformation -Encoding UTF8
 }
 
 # Função para carregar os dados do arquivo CSV com codificação UTF-8
@@ -97,14 +99,32 @@ function FiltrarDocumentos {
     }
 }
 
+# Função para selecionar um arquivo ou pasta
+function SelecionarArquivoOuPasta {
+    param([string]$titulo, [bool]$selecionarArquivo)
+
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+
+    if (-not $selecionarArquivo) {
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    }
+
+    $resultado = $dialog.ShowDialog()
+
+    if ($resultado -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $dialog.FileName
+    }
+
+    return $null
+}
+
 # Função para selecionar o arquivo ou pasta e atualizar o DataGrid
 function Selecionar-ArquivoOuPasta {    
     $row = $datagrid.SelectedItem
     if ($row -ne $null) {
         if ([string]::IsNullOrEmpty($row.Nome)) {
-            [System.Windows.MessageBox]::Show("Por favor, preencha primeiro a coluna 'Nome' antes de selecionar o arquivo ou pasta.", "Atenção", "OK", "Warning")
-        }
-        else {
+            [System.Windows.MessageBox]::Show("Por favor, preencha primeiro a coluna 'Nome' e carregue em Enter antes de selecionar o arquivo ou pasta.", "Atenção", "OK", "Warning")
+        } else {
             $caminho = SelecionarArquivoOuPasta "Selecionar arquivo ou pasta" $true
             if ($caminho -ne $null) {
                 $row.Caminho = $caminho
@@ -132,8 +152,8 @@ function Show-GUI {
                 Caminho            = ""
                 "Caminho completo" = ""
             }
-            $global:csvData += $newRow
-            $datagrid.ItemsSource = $global:csvData
+            $script:global:csvData += $newRow
+            $datagrid.ItemsSource = $script:global:csvData
         })
     $buttonAdd.Margin = New-Object System.Windows.Thickness(0, 0, 10, 0) # Adiciona margem à direita
 
@@ -146,8 +166,8 @@ function Show-GUI {
             if ($null -ne $datagrid.SelectedItem) {
                 $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
                 if ($result -eq "Yes") {
-                    $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
-                    $datagrid.ItemsSource = $global:csvData
+                    $script:global:csvData = $script:global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+                    $datagrid.ItemsSource = $script:global:csvData
                     Save-CSVData
                 }
             }
@@ -161,7 +181,7 @@ function Show-GUI {
 
     $datagrid = New-Object System.Windows.Controls.DataGrid
     $datagrid.AutoGenerateColumns = $false
-    $datagrid.ItemsSource = $global:csvData
+    $datagrid.ItemsSource = $script:global:csvData
 
     # Coluna de Nome
     $nomeColumn = New-Object System.Windows.Controls.DataGridTextColumn
@@ -212,8 +232,8 @@ function Show-GUI {
                 if ($null -ne $datagrid.SelectedItem) {
                     $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
                     if ($result -eq "Yes") {
-                        $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
-                        $datagrid.ItemsSource = $global:csvData
+                        $script:global:csvData = $script:global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+                        $datagrid.ItemsSource = $script:global:csvData
                         Save-CSVData
                     }
                 }
@@ -235,7 +255,7 @@ function Show-GUI {
 # Função para abrir a janela de edição de CSV ao clicar em "Ajustes"
 function OpenCSVEditor {
     # Carregar os dados do arquivo CSV
-    $global:csvData = Load-CSVData
+    $script:global:csvData = Load-CSVData
 
     # Mostrar a GUI do editor de CSV
     Show-GUI
