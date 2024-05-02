@@ -37,7 +37,6 @@ function Load-CSVData {
     return $csvData
 }
 
-
 # Função para abrir um arquivo ou diretório com o aplicativo padrão
 function AbrirArquivo {
     param($caminho)
@@ -98,14 +97,14 @@ function FiltrarDocumentos {
     }
 }
 
-
 # Função para selecionar o arquivo ou pasta e atualizar o DataGrid
 function Selecionar-ArquivoOuPasta {    
     $row = $datagrid.SelectedItem
     if ($row -ne $null) {
         if ([string]::IsNullOrEmpty($row.Nome)) {
             [System.Windows.MessageBox]::Show("Por favor, preencha primeiro a coluna 'Nome' antes de selecionar o arquivo ou pasta.", "Atenção", "OK", "Warning")
-        } else {
+        }
+        else {
             $caminho = SelecionarArquivoOuPasta "Selecionar arquivo ou pasta" $true
             if ($caminho -ne $null) {
                 $row.Caminho = $caminho
@@ -114,8 +113,6 @@ function Selecionar-ArquivoOuPasta {
         }
     }
 }
-
-
 
 # Função para criar a GUI do editor de CSV
 function Show-GUI {
@@ -131,8 +128,8 @@ function Show-GUI {
     $buttonAdd.ToolTip = "Adicionar novo item"
     $buttonAdd.Add_Click({
             $newRow = New-Object PSObject -Property @{
-                Nome            = ""
-                Caminho         = ""
+                Nome               = ""
+                Caminho            = ""
                 "Caminho completo" = ""
             }
             $global:csvData += $newRow
@@ -146,15 +143,15 @@ function Show-GUI {
     $buttonDelete.VerticalContentAlignment = "Center"
     $buttonDelete.ToolTip = "Apagar item selecionado"
     $buttonDelete.Add_Click({
-        if ($null -ne $datagrid.SelectedItem) {
-            $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
-            if ($result -eq "Yes") {
-                $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
-                $datagrid.ItemsSource = $global:csvData
-                Save-CSVData
+            if ($null -ne $datagrid.SelectedItem) {
+                $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
+                if ($result -eq "Yes") {
+                    $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+                    $datagrid.ItemsSource = $global:csvData
+                    Save-CSVData
+                }
             }
-        }
-    })
+        })
     $buttonDelete.Margin = New-Object System.Windows.Thickness(0, 0, 20, 0) # Adiciona margem à direita
 
     $toolbar.Items.Add($buttonAdd)
@@ -181,9 +178,9 @@ function Show-GUI {
     $caminhoFactory.SetValue([System.Windows.Controls.Button]::ContentProperty, "Selecionar")
 
     # Manipulador de evento para o botão "Selecionar" na coluna "Caminho"
-    $caminhoFactory.AddHandler([System.Windows.Controls.Button]::ClickEvent, [System.Windows.RoutedEventHandler]{
+    $caminhoFactory.AddHandler([System.Windows.Controls.Button]::ClickEvent, [System.Windows.RoutedEventHandler] {
             Selecionar-ArquivoOuPasta
-    })
+        })
 
     $caminhoColumn.CellTemplate.VisualTree = $caminhoFactory
     $datagrid.Columns.Add($caminhoColumn)
@@ -193,36 +190,35 @@ function Show-GUI {
     $nomeColumnLocal.Header = "Caminho completo"
     $nomeColumnLocal.Binding = New-Object System.Windows.Data.Binding("Caminho")
     $datagrid.Columns.Add($nomeColumnLocal)
-
     
     # Evento para salvar automaticamente ao perder o foco da célula
     $datagrid.Add_LostFocus({
-        # Finalizar qualquer edição em andamento no DataGrid
-        if ($datagrid.IsEditing) {
-            $datagrid.CommitEdit()
-        }
-        if ($datagrid.IsAddingNew) {
-            $datagrid.CommitEdit()
-        }
+            # Finalizar qualquer edição em andamento no DataGrid
+            if ($datagrid.IsEditing) {
+                $datagrid.CommitEdit()
+            }
+            if ($datagrid.IsAddingNew) {
+                $datagrid.CommitEdit()
+            }
 
-        # Salvar automaticamente as alterações
-        Save-CSVData
-    })
+            # Salvar automaticamente as alterações
+            Save-CSVData
+        })
 
     # Adicionar evento KeyDown para o DataGrid
     $datagrid.Add_KeyDown({
-        param($sender, $e)
-        if ($e.Key -eq "Delete") {
-            if ($null -ne $datagrid.SelectedItem) {
-                $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
-                if ($result -eq "Yes") {
-                    $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
-                    $datagrid.ItemsSource = $global:csvData
-                    Save-CSVData
+            param($sender, $e)
+            if ($e.Key -eq "Delete") {
+                if ($null -ne $datagrid.SelectedItem) {
+                    $result = [System.Windows.MessageBox]::Show("Tem certeza de que deseja apagar este item?", "Confirmação", "YesNo", "Warning") # Melhorando o tipo de mensagem para 'Warning'
+                    if ($result -eq "Yes") {
+                        $global:csvData = $global:csvData | Where-Object { $_ -ne $datagrid.SelectedItem }
+                        $datagrid.ItemsSource = $global:csvData
+                        Save-CSVData
+                    }
                 }
             }
-        }
-    })
+        })
 
     $grid.Children.Add($datagrid)
 
@@ -235,7 +231,6 @@ function Show-GUI {
     $window.Content = $dockPanel
     $window.ShowDialog() | Out-Null
 }
-
 
 # Função para abrir a janela de edição de CSV ao clicar em "Ajustes"
 function OpenCSVEditor {
@@ -251,8 +246,6 @@ function OpenCSVEditor {
     # Carregar todos os documentos na lista ao iniciar o programa
     CarregarDocumentos
 }
-
-
 
 # Lista de documentos
 $documentos = CarregarDocumentosDoCSV
@@ -370,7 +363,6 @@ $button.Add_Click({
             Write-Host "Nenhum arquivo selecionado."
         }
     })
-
 
 # Adicionar controles à janela
 $stackPanel.Children.Add($searchLabel)
