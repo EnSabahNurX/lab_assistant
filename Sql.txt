@@ -1,7 +1,7 @@
 #encoding: UTF8
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Data.SQLite -ErrorAction Stop # Carrega o SQLite (iremos embutir)
+Add-Type -Path (Join-Path -Path $PSScriptRoot -ChildPath "System.Data.SQLite.dll")
 
 # Configurações globais
 $global:dbPath = Join-Path -Path $PSScriptRoot -ChildPath "FileCatalog.db"
@@ -9,14 +9,7 @@ $global:connectionString = "Data Source=$global:dbPath;Version=3;"
 $global:documentos = @()
 $global:rootFolders = @()
 $global:listBox = $null
-
-# Baixa e carrega o SQLite se não estiver presente (iremos incluir no script)
-$sqliteDllPath = Join-Path -Path $PSScriptRoot -ChildPath "System.Data.SQLite.dll"
-if (-not (Test-Path $sqliteDllPath)) {
-    $url = "https://system.data.sqlite.org/downloads/1.0.118.0/System.Data.SQLite.dll"
-    Invoke-WebRequest -Uri $url -OutFile $sqliteDllPath
-}
-Add-Type -Path $sqliteDllPath
+$global:indexingJob = $null
 
 # Funções Auxiliares (mantidas iguais)
 function CriarToolTip($controle, $texto) {
@@ -74,6 +67,8 @@ function Initialize-Database {
             Nome TEXT NOT NULL,
             Caminho TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_nome ON Documentos (Nome);
+        CREATE INDEX IF NOT EXISTS idx_caminho ON Documentos (Caminho);
 "@
     $cmd.ExecuteNonQuery()
     $conn.Close()
@@ -142,28 +137,80 @@ function CarregarDocumentosDoSQL {
     return $global:documentos
 }
 
-function Save-Documents {
+function Save-Documents($docs) {
     Execute-SQLiteNonQuery "DELETE FROM Documentos"
-    foreach ($doc in $global:documentos) {
-        Execute-SQLiteNonQuery "INSERT INTO Documentos (Nome, Caminho) VALUES (@Nome, @Caminho)" @{
-            "@Nome" = $doc.Nome
-            "@Caminho" = $doc.Caminho
-        }
+    $conn = New-Object System.Data.SQLite.SQLiteConnection($global:connectionString)
+    $conn.Open()
+    $cmd = $conn.CreateCommand()
+    $cmd.CommandText = "INSERT INTO Documentos (Nome, Caminho) VALUES (@Nome, @Caminho)"
+    $nomeParam = $cmd.Parameters.Add("@Nome", [System.Data.DbType]::String)
+    $caminhoParam = $cmd.Parameters.Add("@Caminho", [System.Data.DbType]::String)
+    
+    foreach ($doc in $docs) {
+        $nomeParam.Value = $doc.Nome
+        $caminhoParam.Value = $doc.Caminho
+        $cmd.ExecuteNonQuery() | Out-Null
     }
+    $conn.Close()
 }
 
-function IndexarArquivos {
-    $rootFolders = Load-RootFolders
-    $global:documentos = @(
-        foreach ($folder in $rootFolders) {
-            if (Test-Path $folder.Caminho) {
-                Get-ChildItem -Path $folder.Caminho -Recurse -File -ErrorAction SilentlyContinue |
-                    ForEach-Object { [PSCustomObject]@{ Nome = $_.Name; Caminho = $_.FullName } }
+function IndexarArquivosEmSegundoPlano {
+    if ($global:indexingJob -and $global:indexingJob.State -eq "Running") {
+        [System.Windows.Forms.MessageBox]::Show("A indexação já está em andamento.", "Aviso")
+        return
+    }
+
+    $global:indexingJob = Start-Job -ScriptBlock {
+        param($rootFolders, $dbPath)
+        Add-Type -Path (Join-Path -Path $PSScriptRoot -ChildPath "System.Data.SQLite.dll")
+        $connectionString = "Data Source=$dbPath;Version=3;"
+        
+        $docs = @(
+            foreach ($folder in $rootFolders) {
+                if (Test-Path $folder.Caminho) {
+                    Get-ChildItem -Path $folder.Caminho -Recurse -File -ErrorAction SilentlyContinue |
+                        ForEach-Object { [PSCustomObject]@{ Nome = $_.Name; Caminho = $_.FullName } }
+                }
             }
+        )
+        
+        $conn = New-Object System.Data.SQLite.SQLiteConnection($connectionString)
+        $conn.Open()
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = "DELETE FROM Documentos"
+        $cmd.ExecuteNonQuery()
+        
+        $cmd.CommandText = "INSERT INTO Documentos (Nome, Caminho) VALUES (@Nome, @Caminho)"
+        $nomeParam = $cmd.Parameters.Add("@Nome", [System.Data.DbType]::String)
+        $caminhoParam = $cmd.Parameters.Add("@Caminho", [System.Data.DbType]::String)
+        
+        foreach ($doc in $docs) {
+            $nomeParam.Value = $doc.Nome
+            $caminhoParam.Value = $doc.Caminho
+            $cmd.ExecuteNonQuery() | Out-Null
         }
-    )
-    Save-Documents
-    CarregarDocumentos
+        $conn.Close()
+    } -ArgumentList $global:rootFolders, $global:dbPath
+
+    # Timer para verificar quando o job termina
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 1000 # Verifica a cada 1 segundo
+    $timer.Add_Tick({
+        if ($global:indexingJob.State -eq "Completed") {
+            $timer.Stop()
+            Remove-Job -Job $global:indexingJob
+            $global:indexingJob = $null
+            CarregarDocumentos
+            [System.Windows.Forms.MessageBox]::Show("Indexação concluída!", "Sucesso")
+        } elseif ($global:indexingJob.State -eq "Failed") {
+            $timer.Stop()
+            $errorMsg = Receive-Job -Job $global:indexingJob
+            Remove-Job -Job $global:indexingJob
+            $global:indexingJob = $null
+            [System.Windows.Forms.MessageBox]::Show("Erro na indexação: $errorMsg", "Erro")
+        }
+    })
+    $timer.Start()
 }
 
 function AbrirArquivo($caminho) {
@@ -270,7 +317,7 @@ function GerirPastasRaiz {
             $global:rootFolders += [PSCustomObject]@{ Caminho = $item }
         }
         Save-RootFolders
-        IndexarArquivos
+        IndexarArquivosEmSegundoPlano
         $janela.Close()
     })
     $janela.Controls.Add($btnGuardar)
@@ -358,7 +405,7 @@ $btnReindexar.Location = New-Object Drawing.Point(10, 420)
 $btnReindexar.Anchor = 'Bottom, Left'
 AplicarEstiloBotao $btnReindexar
 CriarToolTip $btnReindexar "Atualiza lista de arquivos catalogados conforme a listagem de pastas."
-$btnReindexar.Add_Click({ IndexarArquivos })
+$btnReindexar.Add_Click({ IndexarArquivosEmSegundoPlano })
 $form.Controls.Add($btnReindexar)
 
 $btnPastas = New-Object Windows.Forms.Button
