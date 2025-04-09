@@ -192,13 +192,14 @@ function CarregarDocumentos {
 
 function FiltrarDocumentos($filtro) {
     $global:listBox.Items.Clear()
-    $documentos = CarregarDocumentosDoJson
     
-    if ($filtro -eq "Pesquisar") {
-        $filtroNormalizado = ""
-    } else {
-        $filtroNormalizado = $filtro.ToLower()
+    # Só processa se tiver mais de 2 caracteres
+    if ($filtro.Length -le 2 -or $filtro -eq "Pesquisar") {
+        return
     }
+
+    $documentos = CarregarDocumentosDoJson
+    $filtroNormalizado = $filtro.ToLower()
 
     foreach ($doc in $documentos) {
         $nome = $doc.Nome.ToLower()
