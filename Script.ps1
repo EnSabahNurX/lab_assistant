@@ -269,24 +269,24 @@ function GerirPastasRaiz {
     AplicarEstiloBotao $btnGuardar
     CriarToolTip $btnGuardar "Guarda a listagem de pastas e cataloga os arquivos contidos dentro das pastas da listagem incluindo as subpastas."
     $btnGuardar.Add_Click({
-        $global:rootFolders = @()
-        foreach ($item in $listPastas.Items) {
-            $global:rootFolders += [PSCustomObject]@{ Caminho = $item }
-        }
-        Save-RootFolders
+    $global:rootFolders = @()
+    foreach ($item in $listPastas.Items) {
+        $global:rootFolders += [PSCustomObject]@{ Caminho = $item }
+    }
+    Save-RootFolders
 
-        # Se a lista de pastas estiver vazia, limpa a lista de documentos
-        if ($global:rootFolders.Count -eq 0) {
-            $global:documentos = @()
-            if (Test-Path $global:jsonPath) {
-                Remove-Item $global:jsonPath -Force
-            }
-            CarregarDocumentos  # Atualiza a ListBox para refletir a lista vazia
-        } else {
-            IndexarArquivos  # Caso contrário, indexa normalmente
+    # Se a lista de pastas estiver vazia, limpa a lista de documentos
+    if ($global:rootFolders.Count -eq 0) {
+        $global:documentos = @()
+        if (Test-Path $global:jsonPath) {
+            Remove-Item $global:jsonPath -Force
         }
-        $janela.Close()
-    })
+        $global:listBox.Items.Clear()  # Apenas limpa a ListBox
+    } else {
+        IndexarArquivos  # Indexa mas não carrega os documentos
+    }
+    $janela.Close()
+})
     $janela.Controls.Add($btnGuardar)
 
     $janela.Add_Resize({
