@@ -164,7 +164,6 @@ function MonitorarIndexacao {
     $timer.Start()
 }
 
-
 function AbrirArquivo($caminho) {
     if ([string]::IsNullOrWhiteSpace($caminho) -or -not (Test-Path $caminho)) {
         return
@@ -209,7 +208,6 @@ function FiltrarDocumentos($filtro) {
         }
     }
 }
-
 
 function GerirPastasRaiz {
     $janela = New-Object Windows.Forms.Form
@@ -269,24 +267,24 @@ function GerirPastasRaiz {
     AplicarEstiloBotao $btnGuardar
     CriarToolTip $btnGuardar "Guarda a listagem de pastas e cataloga os arquivos contidos dentro das pastas da listagem incluindo as subpastas."
     $btnGuardar.Add_Click({
-    $global:rootFolders = @()
-    foreach ($item in $listPastas.Items) {
-        $global:rootFolders += [PSCustomObject]@{ Caminho = $item }
-    }
-    Save-RootFolders
-
-    # Se a lista de pastas estiver vazia, limpa a lista de documentos
-    if ($global:rootFolders.Count -eq 0) {
-        $global:documentos = @()
-        if (Test-Path $global:jsonPath) {
-            Remove-Item $global:jsonPath -Force
+        $global:rootFolders = @()
+        foreach ($item in $listPastas.Items) {
+            $global:rootFolders += [PSCustomObject]@{ Caminho = $item }
         }
-        $global:listBox.Items.Clear()  # Apenas limpa a ListBox
-    } else {
-        IndexarArquivos  # Indexa mas não carrega os documentos
-    }
-    $janela.Close()
-})
+        Save-RootFolders
+
+        # Se a lista de pastas estiver vazia, limpa a lista de documentos
+        if ($global:rootFolders.Count -eq 0) {
+            $global:documentos = @()
+            if (Test-Path $global:jsonPath) {
+                Remove-Item $global:jsonPath -Force
+            }
+            $global:listBox.Items.Clear()  # Apenas limpa a ListBox
+        } else {
+            IndexarArquivos  # Indexa mas não carrega os documentos
+        }
+        $janela.Close()
+    })
     $janela.Controls.Add($btnGuardar)
 
     $janela.Add_Resize({
