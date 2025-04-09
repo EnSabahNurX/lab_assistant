@@ -186,8 +186,8 @@ function SelecionarPasta {
 }
 
 function CarregarDocumentos {
-    $textBoxPesquisa.Text = ""
-    FiltrarDocumentos ""
+    $global:listBox.Items.Clear()
+    # Não carrega documentos aqui, apenas limpa a ListBox
 }
 
 function FiltrarDocumentos($filtro) {
