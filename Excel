@@ -80,42 +80,56 @@ function Parse-InflatorExcel {
             FilePath = $ExcelFilePath
         }
 
+        # Extract metadata from the first row
         $result.Metadata = @{
-            ProductionOrder = $data[0].'prod. order'
-            TestOrder = $data[0].'test order'
-            PropLotNumber = $data[0].'prop. lot-number'
-            TestDate = $data[0].'test data'
-            PropType = $data[0].'prop. type'
-            PropMass = $data[0].'prop. mass'
-            Tank = $data[0].'TANK 28.3l (PdL)'
+            ProductionOrder = if ($data[0].'prod. order') { [string]$data[0].'prod. order' } else { "" }
+            TestOrder = if ($data[0].'test order') { [string]$data[0].'test order' } else { "" }
+            PropLotNumber = if ($data[0].'prop. lot-number') { [string]$data[0].'prop. lot-number' } else { "" }
+            TestDate = if ($data[0].'test data') { [string]$data[0].'test data' } else { "" }
+            PropType = if ($data[0].'prop. type') { [string]$data[0].'prop. type' } else { "" }
+            PropMass = if ($data[0].'prop. mass' -ne $null) { [double]$data[0].'prop. mass' } else { 0 }
+            Tank = if ($data[0].'TANK 28.3l (PdL)') { [string]$data[0].'TANK 28.3l (PdL)' } else { "" }
         }
 
+        # Extract all tests (ensayos) from the Excel file
         foreach ($row in $data) {
             if ($row.'test No.' -and $row.'inflator No.') {
                 $test = @{
-                    TestNo = $row.'test No.'
-                    InflatorNo = $row.'inflator No.'
-                    Temperature = $row.'temp.'
-                    pKmax = $row.'pKmax'
-                    tpKmax = $row.'tpKmax'
+                    TestNo = [string]$row.'test No.'
+                    InflatorNo = [string]$row.'inflator No.'
+                    Temperature = if ($row.'temp.' -ne $null) { [double]$row.'temp.' } else { 0 }
+                    pKmax = if ($row.'pKmax' -ne $null) { [double]$row.'pKmax' } else { 0 }
+                    tpKmax = if ($row.'tpKmax' -ne $null) { [double]$row.'tpKmax' } else { 0 }
                     Pressures = @{}
                     Additional = @{}
                 }
 
+                # Extract pressure readings (pK1, pK2, ..., pK100)
                 $pressureKeys = $row.PSObject.Properties.Name | Where-Object { $_ -match '^pK\d+$' }
                 foreach ($key in $pressureKeys) {
-                    $test.Pressures[$key] = $row.$key
+                    if ($row.$key -ne $null) {
+                        $test.Pressures[$key] = [double]$row.$key
+                    }
                 }
 
-                $additionalKeys = @('pK120', 'pK150', 'pBk', 'tpBk', 'pFt', 'tpFt', 'ttfg', 'Gt', 'tpK1%', 'tpK10%', 'tpK25%', 'tpK50%', 'tpK75%', 'tpK90%', 'pKm2', 'd pK', 'd fso')
+                # Extract additional fields
+                $additionalKeys = @('pK120', 'pK150', 'pBk', 'tpBk', 'pFt', 'tpFt', 'ttfg', 'Gt', 
+                                   'tpK1%', 'tpK10%', 'tpK25%', 'tpK50%', 'tpK75%', 'tpK90%', 
+                                   'pKm2', 'd pK', 'd fso')
                 foreach ($key in $additionalKeys) {
                     if ($row.$key -ne $null) {
-                        $test.Additional[$key] = $row.$key
+                        $test.Additional[$key] = [double]$row.$key
                     }
                 }
 
                 $result.Tests += $test
             }
+        }
+
+        if ($result.Tests.Count -eq 0) {
+            Write-Host "Nenhum teste válido encontrado em $ExcelFilePath"
+            $global:statusLabel.Text = "Nenhum teste válido encontrado no arquivo."
+            return $null
         }
 
         return $result
@@ -136,6 +150,8 @@ function Add-ToJsonDatabase {
     $newData = Parse-InflatorExcel -ExcelFilePath $ExcelFilePath
     if (-not $newData) { return }
 
+    # Load existing database
+    CarregarDatabase
     $existingTestNos = $global:database.Tests.TestNo
     $newTests = $newData.Tests | Where-Object { $_.TestNo -notin $existingTestNos }
 
@@ -181,6 +197,12 @@ function FiltrarTestes($filtro) {
                 $global:listBox.Items.Add("$($test.TestNo) | $($test.InflatorNo) | $($test.Temperature) | $($test.pKmax) | $($test.tpKmax) | $($entry.Metadata.ProductionOrder) | $($entry.FilePath)")
             }
         }
+    }
+
+    if ($global:listBox.Items.Count -eq 0) {
+        $global:statusLabel.Text = "Nenhum teste encontrado."
+    } else {
+        $global:statusLabel.Text = "Encontrados $($global:listBox.Items.Count) testes."
     }
 }
 
