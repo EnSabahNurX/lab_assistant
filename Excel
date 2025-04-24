@@ -1,161 +1,547 @@
+#encoding: Windows-1252
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName System.Windows.Forms
+
 # Requires -Module ImportExcel
 
-# Function to parse Excel file and extract data
+# Global paths and variables
+$global:jsonPath = Join-Path -Path $PSScriptRoot -ChildPath "inflator_database.json"
+$global:rootFoldersJsonPath = Join-Path -Path $PSScriptRoot -ChildPath "pastas.json"
+$global:tests = @()
+$global:rootFolders = @()
+$global:listBox = $null
+$global:indexJob = $null
+$global:statusLabel = $null
+$global:progressBar = $null
+
+# Auxiliary Functions
+function CriarToolTip($controle, $texto) {
+    $toolTip = New-Object System.Windows.Forms.ToolTip
+    $toolTip.ToolTipStyle = [System.Windows.Forms.ToolTipStyle]::Standard
+    $toolTip.UseFading = $true
+    $toolTip.UseAnimation = $true
+    $toolTip.IsBalloon = $false
+    $toolTip.ShowAlways = $true
+    $toolTip.AutoPopDelay = 5000
+    $toolTip.InitialDelay = 500
+    $toolTip.ReshowDelay = 100
+    $toolTip.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $toolTip.SetToolTip($controle, $texto) | Out-Null
+}
+
+function AplicarEstiloBotao($botao) {
+    $botao.BackColor = [System.Drawing.Color]::LightGray
+    $botao.ForeColor = [System.Drawing.Color]::Black
+    $botao.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $botao.FlatAppearance.BorderSize = 1
+    $botao.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+}
+
+function AplicarEstiloTextBox($textBox) {
+    $textBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $textBox.ForeColor = [System.Drawing.Color]::Black
+    $textBox.BackColor = [System.Drawing.Color]::White
+}
+
+function AplicarEstiloListBox($listBox) {
+    $listBox.Font = New-Object System.Drawing.Font("Consolas", 10)
+    $listBox.ForeColor = [System.Drawing.Color]::Black
+    $listBox.BackColor = [System.Drawing.Color]::White
+}
+
+function AplicarEstiloJanela($janela) {
+    $janela.BackColor = [System.Drawing.Color]::WhiteSmoke
+    $janela.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+}
+
+function Load-RootFolders {
+    $global:rootFolders = @()
+    if (-not (Test-Path -Path $global:rootFoldersJsonPath -PathType Leaf)) { return @() }
+    
+    try {
+        $global:rootFolders = [System.IO.File]::ReadAllText($global:rootFoldersJsonPath, [System.Text.Encoding]::Default) | 
+            ConvertFrom-Json | 
+            Where-Object { $_.Caminho -and $_.Caminho -ne "" }
+    } catch {
+        Write-Host "Erro ao carregar pastas.json: $_"
+    }
+    return $global:rootFolders
+}
+
+function Save-RootFolders {
+    if (-not $global:rootFolders) { return }
+    
+    try {
+        if ($global:rootFolders.Count -gt 0) {
+            $json = $global:rootFolders | ConvertTo-Json -Depth 10 -Compress
+            [System.IO.File]::WriteAllText($global:rootFoldersJsonPath, $json, [System.Text.Encoding]::Default)
+        } elseif (Test-Path -Path $global:rootFoldersJsonPath -PathType Leaf) {
+            Remove-Item -Path $global:rootFoldersJsonPath -Force
+        }
+    } catch {
+        Write-Host "Erro ao salvar pastas.json: $_"
+    }
+}
+
+function CarregarTestesDoJson {
+    $global:tests = @()
+    if (-not (Test-Path -Path $global:jsonPath -PathType Leaf)) { return @() }
+    
+    try {
+        $global:tests = [System.IO.File]::ReadAllText($global:jsonPath, [System.Text.Encoding]::Default) | 
+            ConvertFrom-Json
+    } catch {
+        Write-Host "Erro ao carregar inflator_database.json: $_"
+    }
+    return $global:tests
+}
+
+function Save-JsonData {
+    if (-not $global:tests) { return }
+    
+    try {
+        $json = $global:tests | ConvertTo-Json -Depth 10 -Compress
+        [System.IO.File]::WriteAllText($global:jsonPath, $json, [System.Text.Encoding]::Default)
+    } catch {
+        Write-Host "Erro ao salvar inflator_database.json: $_"
+    }
+}
+
+# Excel Parsing Function
 function Parse-InflatorExcel {
     param (
         [Parameter(Mandatory=$true)]
         [string]$ExcelFilePath
     )
 
-    # Check if file exists
     if (-not (Test-Path $ExcelFilePath)) {
-        Write-Error "Excel file not found: $ExcelFilePath"
+        Write-Host "Excel file not found: $ExcelFilePath"
         return $null
     }
 
-    # Read Excel file
-    $data = Import-Excel -Path $ExcelFilePath
-
-    # Initialize result object
-    $result = @{
-        Metadata = @{}
-        Tests = @()
-    }
-
-    # Extract metadata (assuming fixed positions in the Excel)
-    $result.Metadata = @{
-        ProductionOrder = $data[0].'prod. order'
-        TestOrder = $data[0].'test order'
-        PropLotNumber = $data[0].'prop. lot-number'
-        TestDate = $data[0].'test data'
-        PropType = $data[0].'prop. type'
-        PropMass = $data[0].'prop. mass'
-        Tank = $data[0].'TANK 28.3l (PdL)'
-    }
-
-    # Extract test data
-    foreach ($row in $data) {
-        if ($row.'test No.' -and $row.'inflator No.') {
-            $test = @{
-                TestNo = $row.'test No.'
-                InflatorNo = $row.'inflator No.'
-                Temperature = $row.'temp.'
-                pKmax = $row.'pKmax'
-                tpKmax = $row.'tpKmax'
-                Pressures = @{}
-                Additional = @{}
-            }
-
-            # Extract pressure readings (pK1, pK2, ..., pK100)
-            $pressureKeys = $row.PSObject.Properties.Name | Where-Object { $_ -match '^pK\d+$' }
-            foreach ($key in $pressureKeys) {
-                $test.Pressures[$key] = $row.$key
-            }
-
-            # Extract additional fields (pK120, pK150, pBk, etc.)
-            $additionalKeys = @('pK120', 'pK150', 'pBk', 'tpBk', 'pFt', 'tpFt', 'ttfg', 'Gt', 'tpK1%', 'tpK10%', 'tpK25%', 'tpK50%', 'tpK75%', 'tpK90%', 'pKm2', 'd pK', 'd fso')
-            foreach ($key in $additionalKeys) {
-                if ($row.$key -ne $null) {
-                    $test.Additional[$key] = $row.$key
-                }
-            }
-
-            $result.Tests += $test
+    try {
+        $data = Import-Excel -Path $ExcelFilePath
+        $result = @{
+            Metadata = @{}
+            Tests = @()
+            FilePath = $ExcelFilePath
         }
-    }
 
-    return $result
+        $result.Metadata = @{
+            ProductionOrder = $data[0].'prod. order'
+            TestOrder = $data[0].'test order'
+            PropLotNumber = $data[0].'prop. lot-number'
+            TestDate = $data[0].'test data'
+            PropType = $data[0].'prop. type'
+            PropMass = $data[0].'prop. mass'
+            Tank = $data[0].'TANK 28.3l (PdL)'
+        }
+
+        foreach ($row in $data) {
+            if ($row.'test No.' -and $row.'inflator No.') {
+                $test = @{
+                    TestNo = $row.'test No.'
+                    InflatorNo = $row.'inflator No.'
+                    Temperature = $row.'temp.'
+                    pKmax = $row.'pKmax'
+                    tpKmax = $row.'tpKmax'
+                    Pressures = @{}
+                    Additional = @{}
+                }
+
+                $pressureKeys = $row.PSObject.Properties.Name | Where-Object { $_ -match '^pK\d+$' }
+                foreach ($key in $pressureKeys) {
+                    $test.Pressures[$key] = $row.$key
+                }
+
+                $additionalKeys = @('pK120', 'pK150', 'pBk', 'tpBk', 'pFt', 'tpFt', 'ttfg', 'Gt', 'tpK1%', 'tpK10%', 'tpK25%', 'tpK50%', 'tpK75%', 'tpK90%', 'pKm2', 'd pK', 'd fso')
+                foreach ($key in $additionalKeys) {
+                    if ($row.$key -ne $null) {
+                        $test.Additional[$key] = $row.$key
+                    }
+                }
+
+                $result.Tests += $test
+            }
+        }
+
+        return $result
+    } catch {
+        Write-Host "Erro ao processar Excel: $_"
+        return $null
+    }
 }
 
-# Function to add data to JSON database
+# Function to Add Excel Data to JSON Database
 function Add-ToJsonDatabase {
     param (
         [Parameter(Mandatory=$true)]
-        [string]$ExcelFilePath,
-        [string]$JsonFilePath = "inflator_database.json"
+        [string]$ExcelFilePath
     )
 
-    # Parse Excel data
     $newData = Parse-InflatorExcel -ExcelFilePath $ExcelFilePath
     if (-not $newData) { return }
 
-    # Initialize or load existing database
-    $database = @()
-    if (Test-Path $JsonFilePath) {
-        $database = Get-Content $JsonFilePath -Raw | ConvertFrom-Json
-    }
-
-    # Check for duplicates and add new tests
+    $database = CarregarTestesDoJson
     $existingTestNos = $database.Tests.TestNo
     $newTests = $newData.Tests | Where-Object { $_.TestNo -notin $existingTestNos }
 
     if ($newTests.Count -eq 0) {
-        Write-Warning "No new tests to add from $ExcelFilePath"
+        Write-Host "No new tests to add from $ExcelFilePath"
         return
     }
 
-    # Append new data
     $database += @{
         Metadata = $newData.Metadata
         Tests = $newTests
+        FilePath = $newData.FilePath
     }
 
-    # Save to JSON
-    $database | ConvertTo-Json -Depth 10 | Out-File $JsonFilePath -Encoding UTF8
-    Write-Host "Added $($newTests.Count) new tests to $JsonFilePath"
+    $global:tests = $database
+    Save-JsonData
+    Write-Host "Added $($newTests.Count) new tests from $ExcelFilePath"
 }
 
-# Function to query the JSON database
-function Query-InflatorDatabase {
-    param (
-        [string]$JsonFilePath = "inflator_database.json",
-        [string]$TestNo,
-        [string]$InflatorNo,
-        [double]$Temperature,
-        [switch]$ListAll
-    )
-
-    # Check if database exists
-    if (-not (Test-Path $JsonFilePath)) {
-        Write-Error "Database not found: $JsonFilePath"
+# Function to Index Excel Files from Root Folders
+function IndexarArquivos {
+    if ($global:indexJob -and $global:indexJob.State -eq "Running") {
+        Write-Host "Indexação em andamento. Aguarde."
         return
     }
 
-    # Load database
-    $database = Get-Content $JsonFilePath -Raw | ConvertFrom-Json
+    $rootFolders = Load-RootFolders
+    $global:statusLabel.Text = "Indexando arquivos Excel..."
+    $global:progressBar.Visible = $true
+    $global:progressBar.Value = 0
+    $btnReindexar.Enabled = $false
 
-    # Query logic
-    $results = @()
-    foreach ($entry in $database) {
-        $tests = $entry.Tests
-        if ($ListAll) {
-            $results += $tests
-        } else {
-            $filtered = $tests
-            if ($TestNo) {
-                $filtered = $filtered | Where-Object { $_.TestNo -eq $TestNo }
+    $global:indexJob = Start-Job -ScriptBlock {
+        foreach ($folder in $using:rootFolders) {
+            if (Test-Path $folder.Caminho) {
+                Get-ChildItem -Path $folder.Caminho -Recurse -File -Include "*.xlsx" -ErrorAction SilentlyContinue |
+                    ForEach-Object { $using:This.Add-ToJsonDatabase($_.FullName) }
             }
-            if ($InflatorNo) {
-                $filtered = $filtered | Where-Object { $_.InflatorNo -eq $InflatorNo }
-            }
-            if ($Temperature) {
-                $filtered = $filtered | Where-Object { $_.Temperature -eq $Temperature }
-            }
-            $results += $filtered
         }
-    }
+    } -ArgumentList $PSCmdlet
 
-    # Output results
-    if ($results.Count -eq 0) {
-        Write-Host "No matching tests found."
-    } else {
-        $results | Format-Table -Property TestNo, InflatorNo, Temperature, pKmax, tpKmax -AutoSize
-        return $results
+    MonitorarIndexacao
+}
+
+function MonitorarIndexacao {
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 500
+    $timer.Add_Tick({
+        if ($global:indexJob -and $global:indexJob.State -ne "Running") {
+            $timer.Stop()
+            $timer.Dispose()
+
+            if ($global:indexJob.State -eq "Completed") {
+                $global:statusLabel.Text = "Indexação concluída."
+                CarregarTestes
+            } else {
+                $global:statusLabel.Text = "Erro ao indexar: $($global:indexJob.State)"
+            }
+
+            $global:progressBar.Visible = $false
+            $btnReindexar.Enabled = $true
+            Remove-Job -Job $global:indexJob -Force
+            $global:indexJob = $null
+        } elseif ($global:indexJob) {
+            if ($global:progressBar.Value -lt 90) {
+                $global:progressBar.Value += 5
+            }
+        }
+    })
+    $timer.Start()
+}
+
+function AbrirArquivo($caminho) {
+    if ([string]::IsNullOrWhiteSpace($caminho) -or -not (Test-Path $caminho)) {
+        return
+    }
+    try {
+        Invoke-Item -Path $caminho
+    } catch {
+        Write-Host "Erro ao abrir arquivo: $_"
     }
 }
 
-# Example usage
-# Add-ToJsonDatabase -ExcelFilePath "613532_202581007838.xlsx"
-# Query-InflatorDatabase -TestNo "202581007846"
-# Query-InflatorDatabase -Temperature -35
-# Query-InflatorDatabase -ListAll
+function SelecionarArquivoExcel {
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Filter = "Arquivos Excel (*.xlsx)|*.xlsx"
+    $dialog.Title = "Selecione um arquivo Excel"
+    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $dialog.FileName
+    }
+    return $null
+}
+
+function SelecionarPasta {
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = "Selecione uma pasta"
+    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $dialog.SelectedPath
+    }
+    return $null
+}
+
+function CarregarTestes {
+    $global:listBox.Items.Clear()
+    # Não carrega testes automaticamente para evitar sobrecarga
+}
+
+function FiltrarTestes($filtro) {
+    $global:listBox.Items.Clear()
+    
+    if ($filtro.Length -le 2 -or $filtro -eq "Pesquisar") {
+        return
+    }
+
+    $tests = CarregarTestesDoJson
+    $filtroNormalizado = $filtro.ToLower()
+
+    foreach ($entry in $tests) {
+        foreach ($test in $entry.Tests) {
+            $testNo = $test.TestNo.ToLower()
+            $inflatorNo = $test.InflatorNo.ToLower()
+            $temp = $test.Temperature.ToString().ToLower()
+            if ($testNo.Contains($filtroNormalizado) -or 
+                $inflatorNo.Contains($filtroNormalizado) -or 
+                $temp.Contains($filtroNormalizado)) {
+                $global:listBox.Items.Add("$($test.TestNo) | $($test.InflatorNo) | $($test.Temperature) | $($test.pKmax) | $($test.tpKmax) | $($entry.FilePath)")
+            }
+        }
+    }
+}
+
+function GerirPastasRaiz {
+    $janela = New-Object Windows.Forms.Form
+    $janela.Text = "Gerir Pastas Raiz"
+    $janela.Size = New-Object Drawing.Size(500, 400)
+    $janela.MinimumSize = New-Object Drawing.Size(400, 300)
+    $janela.StartPosition = "CenterScreen"
+    AplicarEstiloJanela $janela
+
+    $listPastas = New-Object Windows.Forms.ListBox
+    $listPastas.Location = New-Object Drawing.Point(10, 10)
+    $listPastas.Anchor = 'Top, Left, Right, Bottom'
+    $listPastas.Width = $janela.ClientSize.Width - 20
+    $listPastas.Height = 200
+    AplicarEstiloListBox $listPastas
+    $listPastas.SelectionMode = [System.Windows.Forms.SelectionMode]::MultiExtended
+    $janela.Controls.Add($listPastas)
+
+    $btnAdicionar = New-Object Windows.Forms.Button
+    $btnAdicionar.Text = "Adicionar Pasta"
+    $btnAdicionar.Location = New-Object Drawing.Point(10, 220)
+    $btnAdicionar.Font = New-Object System.Drawing.Font("Arial", 12)
+    $btnAdicionar.Width = 140
+    $btnAdicionar.Anchor = 'Bottom, Left'
+    AplicarEstiloBotao $btnAdicionar
+    CriarToolTip $btnAdicionar "Adiciona uma nova pasta para indexar arquivos Excel."
+    $btnAdicionar.Add_Click({
+        $novaPasta = SelecionarPasta
+        if ($novaPasta -and -not $listPastas.Items.Contains($novaPasta)) {
+            $listPastas.Items.Add($novaPasta)
+        }
+    })
+    $janela.Controls.Add($btnAdicionar)
+
+    $btnRemover = New-Object Windows.Forms.Button
+    $btnRemover.Text = "Remover Pasta"
+    $btnRemover.Location = New-Object Drawing.Point(160, 220)
+    $btnRemover.Font = New-Object System.Drawing.Font("Arial", 12)
+    $btnRemover.Width = 140
+    $btnRemover.Anchor = 'Bottom, Left'
+    AplicarEstiloBotao $btnRemover
+    CriarToolTip $btnRemover "Remove a pasta selecionada da listagem."
+    $btnRemover.Add_Click({
+        $selectedItems = @($listPastas.SelectedItems)
+        foreach ($sel in $selectedItems) {
+            $listPastas.Items.Remove($sel)
+        }
+    })
+    $janela.Controls.Add($btnRemover)
+
+    $btnGuardar = New-Object Windows.Forms.Button
+    $btnGuardar.Text = "Guardar"
+    $btnGuardar.Location = New-Object Drawing.Point(10, 260)
+    $btnGuardar.Font = New-Object System.Drawing.Font("Arial", 12)
+    $btnGuardar.Width = $janela.ClientSize.Width - 20
+    $btnGuardar.Anchor = 'Bottom, Left, Right'
+    AplicarEstiloBotao $btnGuardar
+    CriarToolTip $btnGuardar "Salva a listagem de pastas e inicia a indexação de arquivos Excel."
+    $btnGuardar.Add_Click({
+        $global:rootFolders = @()
+        foreach ($item in $listPastas.Items) {
+            $global:rootFolders += [PSCustomObject]@{ Caminho = $item }
+        }
+        Save-RootFolders
+
+        if ($global:rootFolders.Count -eq 0) {
+            $global:tests = @()
+            if (Test-Path $global:jsonPath) {
+                Remove-Item $global:jsonPath -Force
+            }
+            $global:listBox.Items.Clear()
+        } else {
+            IndexarArquivos
+        }
+        $janela.Close()
+    })
+    $janela.Controls.Add($btnGuardar)
+
+    $janela.Add_Resize({
+        $listPastas.Width = $janela.ClientSize.Width - 20
+        $btnGuardar.Width = $janela.ClientSize.Width - 20
+    })
+
+    $listPastas.Items.Clear()
+    $global:rootFolders = Load-RootFolders
+    foreach ($pasta in $global:rootFolders) {
+        $listPastas.Items.Add($pasta.Caminho)
+    }
+
+    AplicarEstiloJanela $janela
+    $janela.ShowDialog()
+}
+
+### GUI PRINCIPAL
+$form = New-Object Windows.Forms.Form
+$form.Text = "Botica | Catálogo de Testes de Inflatores"
+$form.Size = New-Object Drawing.Size(900, 520)
+$form.MinimumSize = New-Object Drawing.Size(600, 400)
+$form.StartPosition = "CenterScreen"
+AplicarEstiloJanela $form
+
+# TextBox de pesquisa
+$textBoxPesquisa = New-Object Windows.Forms.TextBox
+$textBoxPesquisa.Location = New-Object Drawing.Point(10, 10)
+$textBoxPesquisa.Width = 860
+$textBoxPesquisa.Height = 40
+$textBoxPesquisa.Anchor = 'Top, Left, Right'
+AplicarEstiloTextBox $textBoxPesquisa
+$textBoxPesquisa.Text = "Pesquisar (Test No., Inflator No., Temperatura)"
+$textBoxPesquisa.ForeColor = [System.Drawing.Color]::Gray
+$form.Controls.Add($textBoxPesquisa)
+
+$textBoxPesquisa.Add_GotFocus({
+    if ($textBoxPesquisa.Text -eq "Pesquisar (Test No., Inflator No., Temperatura)") {
+        $textBoxPesquisa.Text = ""
+        $textBoxPesquisa.ForeColor = [System.Drawing.Color]::Black
+    }
+})
+
+$textBoxPesquisa.Add_LostFocus({
+    if ($textBoxPesquisa.Text -eq "") {
+        $textBoxPesquisa.Text = "Pesquisar (Test No., Inflator No., Temperatura)"
+        $textBoxPesquisa.ForeColor = [System.Drawing.Color]::Gray
+    }
+})
+
+$textBoxPesquisa.Add_TextChanged({
+    FiltrarTestes $textBoxPesquisa.Text
+})
+
+# ListBox
+$listBox = New-Object Windows.Forms.ListBox
+$listBox.Location = New-Object Drawing.Point(10, 55)
+$listBox.Size = New-Object Drawing.Size(860, 350)
+$listBox.Anchor = 'Top, Bottom, Left, Right'
+AplicarEstiloListBox $listBox
+$listBox.HorizontalScrollbar = $true
+$listBox.SelectionMode = [System.Windows.Forms.SelectionMode]::MultiExtended
+$listBox.Add_DoubleClick({
+    foreach ($selectedItem in $listBox.SelectedItems) {
+        if ($selectedItem -and $selectedItem -match '\|\s*([^\|]+)$') {
+            AbrirArquivo $matches[1]
+        }
+    }
+})
+$listBox.Add_KeyDown({
+    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+        foreach ($selectedItem in $listBox.SelectedItems) {
+            if ($selectedItem -and $selectedItem -match '\|\s*([^\|]+)$') {
+                AbrirArquivo $matches[1]
+            }
+        }
+    }
+})
+$form.Controls.Add($listBox)
+$global:listBox = $listBox
+
+# Botões
+$btnAdicionar = New-Object Windows.Forms.Button
+$btnAdicionar.Text = "Adicionar Excel"
+$btnAdicionar.Size = New-Object Drawing.Size(120, 30)
+$btnAdicionar.Location = New-Object Drawing.Point(10, 420)
+$btnAdicionar.Anchor = 'Bottom, Left'
+AplicarEstiloBotao $btnAdicionar
+CriarToolTip $btnAdicionar "Adiciona um novo arquivo Excel ao banco de dados."
+$btnAdicionar.Add_Click({
+    $excelFile = SelecionarArquivoExcel
+    if ($excelFile) {
+        Add-ToJsonDatabase -ExcelFilePath $excelFile
+        CarregarTestes
+    }
+})
+$form.Controls.Add($btnAdicionar)
+
+$btnReindexar = New-Object Windows.Forms.Button
+$btnReindexar.Text = "Reindexar"
+$btnReindexar.Size = New-Object Drawing.Size(120, 30)
+$btnReindexar.Location = New-Object Drawing.Point(140, 420)
+$btnReindexar.Anchor = 'Bottom, Left'
+AplicarEstiloBotao $btnReindexar
+CriarToolTip $btnReindexar "Reindexa todos os arquivos Excel nas pastas raiz."
+$btnReindexar.Add_Click({ IndexarArquivos })
+$form.Controls.Add($btnReindexar)
+
+$btnPastas = New-Object Windows.Forms.Button
+$btnPastas.Text = "Pastas"
+$btnPastas.Size = New-Object Drawing.Size(120, 30)
+$btnPastas.Location = New-Object Drawing.Point(270, 420)
+$btnPastas.Anchor = 'Bottom, Left'
+AplicarEstiloBotao $btnPastas
+CriarToolTip $btnPastas "Gerencia as pastas raiz para indexação automática de arquivos Excel."
+$btnPastas.Add_Click({ GerirPastasRaiz })
+$form.Controls.Add($btnPastas)
+
+$btnSair = New-Object Windows.Forms.Button
+$btnSair.Text = "Sair"
+$btnSair.Size = New-Object Drawing.Size(120, 30)
+$btnSair.Location = New-Object Drawing.Point(400, 420)
+$btnSair.Anchor = 'Bottom, Left'
+AplicarEstiloBotao $btnSair
+CriarToolTip $btnSair "Fecha o aplicativo."
+$btnSair.Add_Click({ $form.Close() })
+$form.Controls.Add($btnSair)
+
+# Barra de Status
+$statusStrip = New-Object System.Windows.Forms.StatusStrip
+$statusStrip.BackColor = [System.Drawing.Color]::WhiteSmoke
+$statusStrip.SizingGrip = $false
+$statusStrip.Dock = 'Bottom'
+$form.Controls.Add($statusStrip)
+
+$statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
+$statusLabel.Text = "Pronto"
+$statusLabel.Spring = $true
+$statusStrip.Items.Add($statusLabel)
+$global:statusLabel = $statusLabel
+
+$progressBar = New-Object System.Windows.Forms.ToolStripProgressBar
+$progressBar.Width = 200
+$progressBar.Visible = $false
+$statusStrip.Items.Add($progressBar)
+$global:progressBar = $progressBar
+
+# Evento de redimensionamento
+$form.Add_Resize({
+    $textBoxPesquisa.Width = $form.ClientSize.Width - 20
+    $listBox.Width = $form.ClientSize.Width - 20
+    $listBox.Height = $form.ClientSize.Height - 110
+})
+
+CarregarTestes
+$form.ShowDialog()
