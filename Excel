@@ -1,0 +1,161 @@
+# Requires -Module ImportExcel
+
+# Function to parse Excel file and extract data
+function Parse-InflatorExcel {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$ExcelFilePath
+    )
+
+    # Check if file exists
+    if (-not (Test-Path $ExcelFilePath)) {
+        Write-Error "Excel file not found: $ExcelFilePath"
+        return $null
+    }
+
+    # Read Excel file
+    $data = Import-Excel -Path $ExcelFilePath
+
+    # Initialize result object
+    $result = @{
+        Metadata = @{}
+        Tests = @()
+    }
+
+    # Extract metadata (assuming fixed positions in the Excel)
+    $result.Metadata = @{
+        ProductionOrder = $data[0].'prod. order'
+        TestOrder = $data[0].'test order'
+        PropLotNumber = $data[0].'prop. lot-number'
+        TestDate = $data[0].'test data'
+        PropType = $data[0].'prop. type'
+        PropMass = $data[0].'prop. mass'
+        Tank = $data[0].'TANK 28.3l (PdL)'
+    }
+
+    # Extract test data
+    foreach ($row in $data) {
+        if ($row.'test No.' -and $row.'inflator No.') {
+            $test = @{
+                TestNo = $row.'test No.'
+                InflatorNo = $row.'inflator No.'
+                Temperature = $row.'temp.'
+                pKmax = $row.'pKmax'
+                tpKmax = $row.'tpKmax'
+                Pressures = @{}
+                Additional = @{}
+            }
+
+            # Extract pressure readings (pK1, pK2, ..., pK100)
+            $pressureKeys = $row.PSObject.Properties.Name | Where-Object { $_ -match '^pK\d+$' }
+            foreach ($key in $pressureKeys) {
+                $test.Pressures[$key] = $row.$key
+            }
+
+            # Extract additional fields (pK120, pK150, pBk, etc.)
+            $additionalKeys = @('pK120', 'pK150', 'pBk', 'tpBk', 'pFt', 'tpFt', 'ttfg', 'Gt', 'tpK1%', 'tpK10%', 'tpK25%', 'tpK50%', 'tpK75%', 'tpK90%', 'pKm2', 'd pK', 'd fso')
+            foreach ($key in $additionalKeys) {
+                if ($row.$key -ne $null) {
+                    $test.Additional[$key] = $row.$key
+                }
+            }
+
+            $result.Tests += $test
+        }
+    }
+
+    return $result
+}
+
+# Function to add data to JSON database
+function Add-ToJsonDatabase {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$ExcelFilePath,
+        [string]$JsonFilePath = "inflator_database.json"
+    )
+
+    # Parse Excel data
+    $newData = Parse-InflatorExcel -ExcelFilePath $ExcelFilePath
+    if (-not $newData) { return }
+
+    # Initialize or load existing database
+    $database = @()
+    if (Test-Path $JsonFilePath) {
+        $database = Get-Content $JsonFilePath -Raw | ConvertFrom-Json
+    }
+
+    # Check for duplicates and add new tests
+    $existingTestNos = $database.Tests.TestNo
+    $newTests = $newData.Tests | Where-Object { $_.TestNo -notin $existingTestNos }
+
+    if ($newTests.Count -eq 0) {
+        Write-Warning "No new tests to add from $ExcelFilePath"
+        return
+    }
+
+    # Append new data
+    $database += @{
+        Metadata = $newData.Metadata
+        Tests = $newTests
+    }
+
+    # Save to JSON
+    $database | ConvertTo-Json -Depth 10 | Out-File $JsonFilePath -Encoding UTF8
+    Write-Host "Added $($newTests.Count) new tests to $JsonFilePath"
+}
+
+# Function to query the JSON database
+function Query-InflatorDatabase {
+    param (
+        [string]$JsonFilePath = "inflator_database.json",
+        [string]$TestNo,
+        [string]$InflatorNo,
+        [double]$Temperature,
+        [switch]$ListAll
+    )
+
+    # Check if database exists
+    if (-not (Test-Path $JsonFilePath)) {
+        Write-Error "Database not found: $JsonFilePath"
+        return
+    }
+
+    # Load database
+    $database = Get-Content $JsonFilePath -Raw | ConvertFrom-Json
+
+    # Query logic
+    $results = @()
+    foreach ($entry in $database) {
+        $tests = $entry.Tests
+        if ($ListAll) {
+            $results += $tests
+        } else {
+            $filtered = $tests
+            if ($TestNo) {
+                $filtered = $filtered | Where-Object { $_.TestNo -eq $TestNo }
+            }
+            if ($InflatorNo) {
+                $filtered = $filtered | Where-Object { $_.InflatorNo -eq $InflatorNo }
+            }
+            if ($Temperature) {
+                $filtered = $filtered | Where-Object { $_.Temperature -eq $Temperature }
+            }
+            $results += $filtered
+        }
+    }
+
+    # Output results
+    if ($results.Count -eq 0) {
+        Write-Host "No matching tests found."
+    } else {
+        $results | Format-Table -Property TestNo, InflatorNo, Temperature, pKmax, tpKmax -AutoSize
+        return $results
+    }
+}
+
+# Example usage
+# Add-ToJsonDatabase -ExcelFilePath "613532_202581007838.xlsx"
+# Query-InflatorDatabase -TestNo "202581007846"
+# Query-InflatorDatabase -Temperature -35
+# Query-InflatorDatabase -ListAll
