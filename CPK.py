@@ -4,6 +4,9 @@ from tkinter import ttk, messagebox
 from openpyxl import load_workbook
 from datetime import datetime
 import os
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 
 
 class ExcelToJsonConverter:
@@ -17,7 +20,7 @@ class ExcelToJsonConverter:
         self.root.rowconfigure(0, weight=1)
 
         # Frame esquerdo (Database)
-        self.frame_db = tk.Frame(self.root, padx=10, pady=10)
+        self.frame_db = tk.Frame(self.root, relief="groove", padx=10, pady=10, bd=2)
         self.frame_db.grid(row=0, column=0, sticky="nsew")
         self.frame_db.columnconfigure(0, weight=1)
         self.frame_db.rowconfigure(5, weight=1)
@@ -56,7 +59,9 @@ class ExcelToJsonConverter:
         self.status_label.grid(row=4, column=0, sticky="ew", pady=(0, 10))
 
         # Gerenciador de ordens
-        self.frame_orders_manager = tk.Frame(self.frame_db, relief="groove", bd=2)
+        self.frame_orders_manager = tk.Frame(
+            self.frame_db, relief="groove", bd=2, padx=10, pady=10
+        )
         self.frame_orders_manager.grid(row=5, column=0, sticky="nsew")
         self.frame_orders_manager.columnconfigure(0, weight=1)
         self.frame_orders_manager.rowconfigure(2, weight=1)
@@ -143,6 +148,8 @@ class ExcelToJsonConverter:
                 scrollregion=self.orders_canvas.bbox("all")
             ),
         )
+        # Forçar scroll para o topo ao atualizar a lista
+        self.orders_canvas.yview_moveto(0)
         self.orders_canvas.bind(
             "<Enter>",
             lambda e: self.orders_canvas.bind_all("<MouseWheel>", self._on_mousewheel),
@@ -183,6 +190,16 @@ class ExcelToJsonConverter:
         self.workspace_frame.grid(row=0, column=1, sticky="nsew")
         self.workspace_frame.columnconfigure(0, weight=1)
         self.workspace_frame.rowconfigure(2, weight=1)
+
+        # Frame para o botão Relatório alinhado à direita no topo do workspace
+        btn_report_frame = tk.Frame(self.workspace_frame)
+        btn_report_frame.grid(row=0, column=0, sticky="ew")
+        btn_report_frame.columnconfigure(0, weight=1)
+
+        self.btn_report = tk.Button(
+            btn_report_frame, text="Relatório", command=self.show_report
+        )
+        self.btn_report.grid(row=0, column=1, sticky="e")
 
         self.workspace_title = tk.Label(
             self.workspace_frame, text="Workspace", font=("Helvetica", 14, "bold")
@@ -251,7 +268,7 @@ class ExcelToJsonConverter:
 
         # Inicializações
         self.json_file = "Data.json"
-        self.excel_folder = r"C:\Users\rickl\Downloads\CPK"
+        self.excel_folder = r"H:\TEAMS\Inflator_Lab\0_Evaluations\vi"
         self.workspace_data = []
 
         self.update_orders_list()
@@ -435,7 +452,6 @@ class ExcelToJsonConverter:
         ] = limits
 
     def update_orders_list(self):
-        """Atualiza a lista de ordens no gerenciador, ordenada pela data mais recente primeiro."""
         # Limpar Checkbuttons existentes
         for widget in self.orders_inner_frame.winfo_children():
             widget.destroy()
@@ -449,9 +465,41 @@ class ExcelToJsonConverter:
             with open(self.json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # Coletar ordens com versão e test_date
+            # Preencher combobox de versões
+            versions = sorted(data.keys())
+            if not hasattr(self, "version_combobox"):
+                # Se não existe, crie (adicione isso na __init__ se já não existir)
+                self.version_var = tk.StringVar()
+                self.version_combobox = ttk.Combobox(
+                    self.frame_orders_manager,
+                    textvariable=self.version_var,
+                    state="readonly",
+                    values=["Todas"] + versions,
+                    width=12,
+                )
+                self.version_combobox.pack()
+                self.version_combobox.bind(
+                    "<<ComboboxSelected>>", self.on_version_filter
+                )
+            else:
+                self.version_combobox["values"] = ["Todas"] + versions
+
+            # Manter seleção se possível
+            current = self.version_combobox.get()
+            if current not in self.version_combobox["values"]:
+                self.version_combobox.set("Todas")
+
+            selected_version = self.version_combobox.get()
+
+            # Coletar ordens com versão e test_date, filtrando pela versão selecionada
             orders_list = []
             for version, orders in data.items():
+                if (
+                    selected_version
+                    and selected_version != "Todas"
+                    and version != selected_version
+                ):
+                    continue
                 for order, details in orders.items():
                     test_date = details["metadados"].get("test_date", "0000-00-00")
                     orders_list.append((version, order, test_date))
@@ -465,26 +513,77 @@ class ExcelToJsonConverter:
 
             orders_list.sort(key=lambda x: parse_date_safe(x[2]), reverse=True)
 
-            # Adicionar Checkbuttons para cada ordem
+            # Adicionar Checkbuttons para cada ordem filtrada
             for idx, (version, order, test_date) in enumerate(orders_list):
                 var = tk.BooleanVar()
                 self.order_vars[(version, order)] = var
                 display_text = f"Versão: {version}, Ordem: {order}, Data: {test_date}"
+
+                # Frame para alinhar Checkbutton e botão de visualização
+                row_frame = tk.Frame(self.orders_inner_frame)
+                row_frame.grid(row=idx, column=0, sticky="w", padx=5, pady=2)
+
                 chk = tk.Checkbutton(
-                    self.orders_inner_frame,
+                    row_frame,
                     text=display_text,
                     variable=var,
                     anchor="w",
-                    width=50,
+                    width=45,
                 )
-                chk.grid(row=idx, column=0, sticky="w", padx=5, pady=2)
-                self.order_checkbuttons[(version, order)] = chk
+                chk.pack(side=tk.LEFT)
 
-            # Atualizar região de rolagem
-            self.orders_canvas.configure(scrollregion=self.orders_canvas.bbox("all"))
+                btn_view = tk.Button(
+                    row_frame,
+                    text="     👁️",
+                    width=3,
+                    command=lambda v=version, o=order: self.show_metadata_popup(v, o),
+                )
+                btn_view.pack(side=tk.LEFT, padx=(10, 0))
+
+                self.order_checkbuttons[(version, order)] = chk
 
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao carregar ordens: {str(e)}")
+
+    def show_metadata_popup(self, version, order):
+        # Carrega os dados do JSON
+        if not os.path.exists(self.json_file):
+            messagebox.showerror("Erro", "Base de dados não encontrada.")
+            return
+
+        with open(self.json_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if version not in data or order not in data[version]:
+            messagebox.showerror("Erro", "Ordem não encontrada na base de dados.")
+            return
+
+        metadados = data[version][order].get("metadados", {})
+        temperaturas = data[version][order].get("temperaturas", {})
+
+        # Monta a string de metadados
+        info = ""
+        for k, v in metadados.items():
+            info += f"{k}: {v}\n"
+        info += "\nTemperaturas (°C):\n"
+        for tipo, tdata in temperaturas.items():
+            info += f"  {tipo}: {tdata.get('temperatura_c', 'N/A')}\n"
+
+        # Cria a mini janela de visualização
+        popup = tk.Toplevel(self.root)
+        popup.title(f"Metadados - {order}")
+        popup.geometry("350x250")
+        popup.resizable(False, False)
+        tk.Label(
+            popup,
+            text=f"Metadados da Ordem {order} ({version})",
+            font=("Arial", 11, "bold"),
+        ).pack(pady=8)
+        text = tk.Text(popup, width=40, height=10, wrap="word")
+        text.insert("1.0", info)
+        text.config(state="disabled")
+        text.pack(padx=8, pady=8)
+        tk.Button(popup, text="Fechar", command=popup.destroy).pack(pady=5)
 
     def update_items_per_page(self, event=None):
         try:
@@ -554,7 +653,12 @@ class ExcelToJsonConverter:
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao remover ordens: {str(e)}")
 
+    def on_version_filter(self, event=None):
+        """Atualiza a lista quando o filtro de versão muda"""
+        self.update_orders_list()
+
     def send_to_workspace(self):
+        """Envia dados detalhados dos ensaios selecionados para o Workspace."""
         selected_orders = [
             (version, order)
             for (version, order), var in self.order_vars.items()
@@ -570,16 +674,32 @@ class ExcelToJsonConverter:
             with open(self.json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            self.list_results.delete(0, tk.END)
-            self.workspace_data = []
+            # Verificar versão dos ensaios selecionados
+            versions = set(version for version, order in selected_orders)
+            if len(versions) > 1:
+                messagebox.showerror("Erro", "Selecione ensaios de apenas uma versão.")
+                return
 
-            header = "Ensaio | Inflator | Temperatura | Tipo | Versão | Ordem"
-            self.list_results.insert(tk.END, header)
-            self.list_results.insert(tk.END, "-" * len(header))
+            # Se o Workspace já contém dados, verificar a versão
+            if (
+                self.workspace_data
+                and self.workspace_data[0]["version"] not in versions
+            ):
+                messagebox.showerror(
+                    "Erro",
+                    "O Workspace já contém ensaios de outra versão. Limpe o Workspace antes.",
+                )
+                return
+
+            new_workspace_data = []  # Dados temporários para adicionar
 
             for version, order in selected_orders:
                 if version in data and order in data[version]:
                     details = data[version][order]
+                    metadados = details.get("metadados", {})
+                    test_date = metadados.get(
+                        "test_date", "0000-00-00"
+                    )  # Captura a data
                     temperaturas = details.get("temperaturas", {})
                     for temp_type, temp_data in temperaturas.items():
                         temperatura_c = temp_data.get("temperatura_c", "N/A")
@@ -593,23 +713,34 @@ class ExcelToJsonConverter:
                             test_no = ensaio.get("test_no", "N/A")
                             inflator_no = ensaio.get("inflator_no", "N/A")
                             has_pressure_data = inflator_no in pressao_map
-                            line = f"{test_no} | {inflator_no} | {temperatura_c}°C | {temp_type} | {version} | {order}"
-                            if has_pressure_data:
-                                line += " | Dados de pressão disponíveis"
-                            else:
-                                line += " | Sem dados de pressão"
-                            self.list_results.insert(tk.END, line)
-                            self.workspace_data.append(
+                            new_workspace_data.append(
                                 {
                                     "test_no": test_no,
                                     "inflator_no": inflator_no,
                                     "temperatura_c": temperatura_c,
                                     "tipo": temp_type,
-                                    "versao": version,
-                                    "ordem": order,
+                                    "version": version,
+                                    "order": order,
+                                    "test_date": test_date,  # Inclui a data
                                     "pressoes": pressao_map.get(inflator_no, None),
                                 }
                             )
+
+            # Ordenar dados novos e existentes
+            def parse_date_safe(date_str):
+                try:
+                    return datetime.strptime(date_str, "%Y-%m-%d")
+                except:
+                    return datetime(1900, 1, 1)  # Data mínima
+
+            # Juntar novos registros aos existentes
+            self.workspace_data.extend(new_workspace_data)
+            self.workspace_data.sort(
+                key=lambda x: parse_date_safe(x.get("test_date", "1900-01-01")),
+                reverse=True,
+            )
+
+            self.update_workspace_display()  # Atualiza exibição
 
             messagebox.showinfo("Sucesso", "Ensaios enviados ao Workspace com sucesso!")
 
@@ -617,6 +748,21 @@ class ExcelToJsonConverter:
             messagebox.showerror(
                 "Erro", f"Erro ao enviar ensaios ao Workspace: {str(e)}"
             )
+
+    def update_workspace_display(self):
+        """Atualiza a exibição do Workspace com os dados atuais, ordenados por data."""
+        self.list_results.delete(0, tk.END)
+        header = "Ensaio | Inflator | Temperatura | Tipo | Versão | Ordem | Data"
+        self.list_results.insert(tk.END, header)
+        self.list_results.insert(tk.END, "-" * len(header))
+
+        for reg in self.workspace_data:
+            line = f"{reg['test_no']} | {reg['inflator_no']} | {reg['temperatura_c']}°C | {reg['tipo']} | {reg['version']} | {reg['order']} | {reg['test_date']}"
+            if reg["pressoes"]:
+                line += " | Dados de pressão disponíveis"
+            else:
+                line += " | Sem dados de pressão"
+            self.list_results.insert(tk.END, line)
 
     def apply_filters(self):
         temp_filter = self.filter_temperature_var.get()
@@ -626,6 +772,15 @@ class ExcelToJsonConverter:
         header = "Ensaio | Inflator | Temperatura | Tipo | Versão | Ordem"
         self.list_results.insert(tk.END, header)
         self.list_results.insert(tk.END, "-" * len(header))
+
+        # Verificar se há múltiplas versões no workspace
+        versions = {reg["version"] for reg in self.workspace_data}
+        if len(versions) > 1:
+            messagebox.showerror(
+                "Erro",
+                "Workspace contém versões mistas! Limpe antes de aplicar filtros.",
+            )
+            return
 
         filtered_data = []
         for reg in self.workspace_data:
@@ -640,7 +795,7 @@ class ExcelToJsonConverter:
 
         # Exibir resultados filtrados
         for reg in filtered_data:
-            line = f"{reg['test_no']} | {reg['inflator_no']} | {reg['temperatura_c']}°C | {reg['tipo']} | {reg['versao']} | {reg['ordem']}"
+            line = f"{reg['test_no']} | {reg['inflator_no']} | {reg['temperatura_c']}°C | {reg['tipo']} | {reg['version']} | {reg['order']}"
             if reg["pressoes"]:
                 line += " | Dados de pressão disponíveis"
             else:
@@ -659,19 +814,16 @@ class ExcelToJsonConverter:
             )
             return
 
-        before_count = len(self.workspace_data)
+        before = len(self.workspace_data)
         self.workspace_data = [
             reg
             for reg in self.workspace_data
-            if (reg["versao"], reg["ordem"]) not in selected_orders
+            if (reg["version"], reg["order"]) not in selected_orders
         ]
-        after_count = len(self.workspace_data)
-
-        self.apply_filters()  # Atualiza a lista exibida
-
-        removed_count = before_count - after_count
+        after = len(self.workspace_data)
+        self.update_workspace_display()
         messagebox.showinfo(
-            "Sucesso", f"{removed_count} registros removidos do Workspace."
+            "Sucesso", f"{before - after} registros removidos do Workspace."
         )
 
     def clear_workspace(self):
@@ -696,6 +848,170 @@ class ExcelToJsonConverter:
             except Exception:
                 return date_value
         return None
+
+    def show_report(self):
+        if not self.workspace_data:
+            messagebox.showwarning(
+                "Aviso", "Workspace vazio. Adicione ensaios antes de gerar o relatório."
+            )
+            return
+
+        # Agrupar dados por temperatura
+        data_by_temp = {}
+        for reg in self.workspace_data:
+            temp = reg["tipo"]
+            if temp not in data_by_temp:
+                data_by_temp[temp] = []
+            data_by_temp[temp].append(reg)
+
+        # Criar janela do relatório
+        report_win = tk.Toplevel(self.root)
+        report_win.title("Relatório de Ensaios")
+        report_win.geometry("1000x700")
+
+        # Frame com scrollbar vertical
+        container = ttk.Frame(report_win)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(container)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Para cada temperatura, plotar gráfico e tabela
+        for temp, records in data_by_temp.items():
+            # Extrair versão (assumimos mesma versão para todos)
+            versoes = set(r["version"] for r in records)
+            if len(versoes) > 1:
+                versao = ", ".join(versoes)
+            else:
+                versao = list(versoes)[0]
+
+            # Número total de inflators
+            total_inflators = len(records)
+
+            # Criar frame para temperatura
+            temp_frame = ttk.LabelFrame(
+                scrollable_frame,
+                text=f"Temperatura: {temp} | Versão: {versao} | Total Inflators: {total_inflators}",
+            )
+            temp_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+            # Determinar pontos de tempo (ms) e montar matrizes para pressões
+            # Consideramos que todos os registros têm dados_pressao: dict ms->pressao
+            # Construir lista ordenada de ms (pontos de tempo)
+            ms_points = set()
+            for r in records:
+                if r["pressoes"]:
+                    ms_points.update(r["pressoes"].keys())
+            ms_points = sorted(int(ms) for ms in ms_points)
+            ms_points_str = [str(ms) for ms in ms_points]
+
+            if not ms_points:
+                ttk.Label(
+                    temp_frame,
+                    text="Nenhum dado de pressão disponível para esta temperatura.",
+                ).pack()
+                continue
+
+            # Matriz pressões: linhas = inflators, colunas = ms_points
+            pressao_matrix = []
+            for r in records:
+                p = []
+                if r["pressoes"]:
+                    for ms in ms_points_str:
+                        val = r["pressoes"].get(ms, np.nan)
+                        p.append(val)
+                else:
+                    p = [np.nan] * len(ms_points)
+                pressao_matrix.append(p)
+            pressao_matrix = np.array(pressao_matrix, dtype=np.float64)
+
+            # Calcular limites maximos e minimos (pegando do primeiro registro, pois limites são iguais para todos)
+            # Buscamos no JSON original: data[versao][ordem]["temperaturas"][temp]["limites"]
+            limites_max = []
+            limites_min = []
+            try:
+                with open(self.json_file, "r", encoding="utf-8") as f:
+                    data_json = json.load(f)
+                # Pegamos a ordem do primeiro registro
+                ordem_exemplo = records[0]["order"]
+                limites = data_json[versao][ordem_exemplo]["temperaturas"][temp][
+                    "limites"
+                ]
+                max_dict = limites.get("maximos", {})
+                min_dict = limites.get("minimos", {})
+                limites_max = [max_dict.get(str(ms), np.nan) for ms in ms_points]
+                limites_min = [min_dict.get(str(ms), np.nan) for ms in ms_points]
+            except Exception:
+                # Caso não encontre limites, preencher com nan
+                limites_max = [np.nan] * len(ms_points)
+                limites_min = [np.nan] * len(ms_points)
+
+            # Calcular média ignorando nan
+            media = np.nanmean(pressao_matrix, axis=0)
+
+            # Criar figura matplotlib
+            fig, ax = plt.subplots(figsize=(8, 4))
+            # Curvas de todos inflators em preto
+            for p in pressao_matrix:
+                ax.plot(ms_points, p, color="black", linewidth=0.7, alpha=0.7)
+            # Limite máximo em vermelho
+            ax.plot(
+                ms_points, limites_max, color="red", linewidth=2, label="Limite Máximo"
+            )
+            # Limite mínimo em vermelho
+            ax.plot(
+                ms_points, limites_min, color="red", linewidth=2, label="Limite Mínimo"
+            )
+            # Média em verde
+            ax.plot(ms_points, media, color="green", linewidth=2, label="Média")
+
+            ax.set_title(f"Curvas de Pressão - Temperatura {temp}")
+            ax.set_xlabel("Tempo (ms)")
+            ax.set_ylabel("Pressão (bar)")
+            ax.legend()
+
+            # Inserir figura no tkinter
+            canvas_fig = FigureCanvasTkAgg(fig, master=temp_frame)
+            canvas_fig.draw()
+            canvas_fig.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+            # Criar tabela abaixo do gráfico
+            # Tabela com 3 linhas: limites máximos, média, limites mínimos
+            from tkinter import ttk
+
+            table = ttk.Treeview(
+                temp_frame, columns=ms_points_str, show="headings", height=3
+            )
+            for ms in ms_points_str:
+                table.heading(ms, text=ms)
+                table.column(ms, width=30, anchor="center")
+
+            # Inserir linhas
+            def format_row(row):
+                return [f"{v:.2f}" if not np.isnan(v) else "-" for v in row]
+
+            table.insert("", "end", values=format_row(limites_max), tags=("max",))
+            table.insert("", "end", values=format_row(media), tags=("media",))
+            table.insert("", "end", values=format_row(limites_min), tags=("min",))
+
+            table.tag_configure("max", background="#fdd")
+            table.tag_configure("media", background="#dfd")
+            table.tag_configure("min", background="#fdd")
+
+            table.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        report_win.mainloop()
 
 
 if __name__ == "__main__":
