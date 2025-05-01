@@ -29,7 +29,7 @@ echo ✅ Python encontrado em: %PYTHON_EXE%
 echo [5/5] A instalar bibliotecas opcionais...
 "%PYTHON_EXE%" -m ensurepip
 "%PYTHON_EXE%" -m pip install --upgrade pip
-"%PYTHON_EXE%" -m pip install pandas openpyxl reportlab matplotlib numpy
+"%PYTHON_EXE%" -m pip install pandas openpyxl reportlab pyinstaller matplotlib numpy
 
 echo ✅ Instalação finalizada com sucesso!
 "%PYTHON_EXE%" --version
