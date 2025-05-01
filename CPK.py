@@ -10,62 +10,80 @@ class ExcelToJsonConverter:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Conversor de Ensaios Balísticos")
-        self.root.geometry("1200x600")
-        self.root.resizable(True, True)
+        self.root.geometry("1200x700")
+        self.root.minsize(1000, 600)
+        self.root.columnconfigure(0, weight=1)
+        self.root.columnconfigure(1, weight=3)
+        self.root.rowconfigure(0, weight=1)
 
-        # Variáveis para paginação
+        # Frame esquerdo (Database)
+        self.frame_db = tk.Frame(self.root, padx=10, pady=10)
+        self.frame_db.grid(row=0, column=0, sticky="nsew")
+        self.frame_db.columnconfigure(0, weight=1)
+        self.frame_db.rowconfigure(5, weight=1)
+
+        # Título Database
+        self.label_database_title = tk.Label(
+            self.frame_db, text="Database", font=("Helvetica", 14, "bold")
+        )
+        self.label_database_title.grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+        # Entrada ordens
+        tk.Label(
+            self.frame_db, text="Digite os números das ordens separados por vírgula:"
+        ).grid(row=1, column=0, sticky="w")
+        self.entry_orders = tk.Entry(self.frame_db)
+        self.entry_orders.grid(row=2, column=0, sticky="ew", pady=5)
+
+        # Botões processar e remover ordens digitadas lado a lado
+        btns_frame = tk.Frame(self.frame_db)
+        btns_frame.grid(row=3, column=0, sticky="ew", pady=5)
+        btns_frame.columnconfigure((0, 1), weight=1)
+
+        self.btn_process = tk.Button(
+            btns_frame, text="Adicionar Ordens Digitadas", command=self.process_orders
+        )
+        self.btn_process.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        self.btn_remove_orders = tk.Button(
+            btns_frame,
+            text="Remover Ordens Digitadas",
+            command=self.remove_orders_by_input,
+        )
+        self.btn_remove_orders.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        self.status_label = tk.Label(self.frame_db, text="", anchor="w", fg="green")
+        self.status_label.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+
+        # Gerenciador de ordens
+        self.frame_orders_manager = tk.Frame(self.frame_db, relief="groove", bd=2)
+        self.frame_orders_manager.grid(row=5, column=0, sticky="nsew")
+        self.frame_orders_manager.columnconfigure(0, weight=1)
+        self.frame_orders_manager.rowconfigure(2, weight=1)
+
+        tk.Label(self.frame_orders_manager, text="Ordens:").grid(
+            row=0, column=0, sticky="w", padx=5, pady=5
+        )
+
+        # Paginação e filtros
         self.current_page = 1
         self.orders_per_page = 10
         self.total_pages = 1
 
-        # Seção para alimentar o banco de dados
-        self.frame_db = tk.Frame(self.root)
-        self.frame_db.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.Y)
-
-        self.label_orders = tk.Label(
-            self.frame_db, text="Digite os números das ordens separados por vírgula:"
-        )
-        self.label_orders.pack()
-
-        self.entry_orders = tk.Entry(self.frame_db, width=50)
-        self.entry_orders.pack()
-
-        self.btn_process = tk.Button(
-            self.frame_db,
-            text="Processar Ordens e Atualizar JSON",
-            command=self.process_orders,
-        )
-        self.btn_process.pack(pady=5)
-
-        self.status_label = tk.Label(self.frame_db, text="")
-        self.status_label.pack(pady=5)
-
-        # Gerenciador de ordens
-        self.frame_orders_manager = tk.Frame(self.frame_db)
-        self.frame_orders_manager.pack(pady=10, fill=tk.BOTH, expand=True)
-
-        self.label_orders_manager = tk.Label(self.frame_orders_manager, text="Ordens:")
-        self.label_orders_manager.pack(anchor="w")
-
-        # Frame para controles de paginação e seleção
         self.pagination_frame = tk.Frame(self.frame_orders_manager)
-        self.pagination_frame.pack(fill=tk.X, pady=5)
+        self.pagination_frame.grid(row=1, column=0, sticky="ew", padx=5)
+        self.pagination_frame.columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
 
-        # Seletor de itens por página
-        tk.Label(self.pagination_frame, text="Itens por página:").pack(
-            side=tk.LEFT, padx=(0, 5)
+        tk.Label(self.pagination_frame, text="Itens por página:").grid(
+            row=0, column=0, sticky="w"
         )
         self.page_selector = ttk.Combobox(
-            self.pagination_frame,
-            values=[10, 20, 30, 40, 50],
-            width=5,
-            state="readonly",
+            self.pagination_frame, values=[5, 10, 20, 50], width=5, state="readonly"
         )
         self.page_selector.set(self.orders_per_page)
-        self.page_selector.pack(side=tk.LEFT)
+        self.page_selector.grid(row=0, column=1, sticky="w")
         self.page_selector.bind("<<ComboboxSelected>>", self.update_items_per_page)
 
-        # Checkbox selecionar tudo da página
         self.select_all_var = tk.BooleanVar()
         self.select_all_chk = tk.Checkbutton(
             self.pagination_frame,
@@ -73,52 +91,58 @@ class ExcelToJsonConverter:
             variable=self.select_all_var,
             command=self.toggle_select_all,
         )
-        self.select_all_chk.pack(side=tk.LEFT, padx=10)
+        self.select_all_chk.grid(row=0, column=2, sticky="w", padx=10)
 
-        # Navegação entre páginas
+        self.version_var = tk.StringVar()
+        self.version_combobox = ttk.Combobox(
+            self.pagination_frame,
+            textvariable=self.version_var,
+            state="readonly",
+            width=12,
+        )
+        self.version_combobox.grid(row=0, column=3, sticky="w", padx=10)
+        self.version_combobox.bind("<<ComboboxSelected>>", self.on_version_filter)
+        self.version_combobox["values"] = []
+        self.version_combobox.set("Todas")
+
         self.nav_frame = tk.Frame(self.pagination_frame)
-        self.nav_frame.pack(side=tk.RIGHT)
+        self.nav_frame.grid(row=0, column=6, sticky="e")
 
         self.prev_btn = tk.Button(
             self.nav_frame, text="< Anterior", command=lambda: self.change_page(-1)
         )
-        self.prev_btn.pack(side=tk.LEFT)
+        self.prev_btn.pack(side="left")
 
         self.page_info = tk.Label(self.nav_frame, text="Página 1/1")
-        self.page_info.pack(side=tk.LEFT, padx=5)
+        self.page_info.pack(side="left", padx=5)
 
         self.next_btn = tk.Button(
             self.nav_frame, text="Próxima >", command=lambda: self.change_page(1)
         )
-        self.next_btn.pack(side=tk.LEFT)
+        self.next_btn.pack(side="left")
 
-        # Canvas com scrollbar para ordens
+        # Canvas e scrollbar para ordens
         self.orders_canvas = tk.Canvas(self.frame_orders_manager)
+        self.orders_canvas.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
         self.orders_scrollbar = tk.Scrollbar(
             self.frame_orders_manager,
             orient=tk.VERTICAL,
             command=self.orders_canvas.yview,
         )
+        self.orders_scrollbar.grid(row=2, column=1, sticky="ns", pady=5)
         self.orders_canvas.configure(yscrollcommand=self.orders_scrollbar.set)
 
-        self.orders_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.orders_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Frame interno para os Checkbuttons
         self.orders_inner_frame = tk.Frame(self.orders_canvas)
         self.orders_canvas.create_window(
             (0, 0), window=self.orders_inner_frame, anchor="nw"
         )
 
-        # Vincular evento de redimensionamento do canvas
         self.orders_inner_frame.bind(
             "<Configure>",
             lambda e: self.orders_canvas.configure(
                 scrollregion=self.orders_canvas.bbox("all")
             ),
         )
-
-        # Scroll com mouse wheel
         self.orders_canvas.bind(
             "<Enter>",
             lambda e: self.orders_canvas.bind_all("<MouseWheel>", self._on_mousewheel),
@@ -127,69 +151,89 @@ class ExcelToJsonConverter:
             "<Leave>", lambda e: self.orders_canvas.unbind_all("<MouseWheel>")
         )
 
-        self.order_vars = {}  # Dicionário para armazenar variáveis dos checkboxes
-        self.order_checkbuttons = {}  # Dicionário para armazenar os Checkbuttons
+        self.order_vars = {}
+        self.order_checkbuttons = {}
 
-        # Frame para botões logo abaixo do canvas
+        # Botões abaixo do canvas
         self.btn_frame = tk.Frame(self.frame_orders_manager)
-        self.btn_frame.pack(fill=tk.X, pady=5)
+        self.btn_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.btn_frame.columnconfigure((0, 1, 2), weight=1)
 
-        self.btn_remove_orders = tk.Button(
+        self.btn_send_workspace = tk.Button(
+            self.btn_frame, text="Enviar ao Workspace", command=self.send_to_workspace
+        )
+        self.btn_send_workspace.grid(row=0, column=0, sticky="ew", padx=5)
+
+        self.btn_remove_workspace_orders = tk.Button(
             self.btn_frame,
-            text="Remover Ordens Selecionadas",
-            command=self.remove_selected_orders,
+            text="Remover Ensaios das Ordens Selecionadas",
+            command=self.remove_workspace_orders_selected,
         )
-        self.btn_remove_orders.pack(side=tk.LEFT, padx=5)
+        self.btn_remove_workspace_orders.grid(row=0, column=1, sticky="ew", padx=5)
 
-        self.btn_show_orders = tk.Button(
-            self.btn_frame,
-            text="Mostrar Ensaios Selecionados",
-            command=self.show_selected_orders,
+        self.btn_clear_workspace = tk.Button(
+            self.btn_frame, text="Limpar Workspace", command=self.clear_workspace
         )
-        self.btn_show_orders.pack(side=tk.LEFT, padx=5)
+        self.btn_clear_workspace.grid(row=0, column=2, sticky="ew", padx=5)
 
-        # Seção para visualização das ordens
-        self.frame_view = tk.Frame(self.root)
-        self.frame_view.pack(side=tk.RIGHT, padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        self.label_view = tk.Label(
-            self.frame_view, text="Visualizar Ordens Adicionadas com Filtros:"
+        # Workspace (direita)
+        self.workspace_frame = tk.Frame(
+            self.root, relief="groove", bd=2, padx=10, pady=10
         )
-        self.label_view.pack()
+        self.workspace_frame.grid(row=0, column=1, sticky="nsew")
+        self.workspace_frame.columnconfigure(0, weight=1)
+        self.workspace_frame.rowconfigure(2, weight=1)
 
-        # Opções de filtro
-        self.filter_frame = tk.Frame(self.frame_view)
-        self.filter_frame.pack(pady=5)
+        self.workspace_title = tk.Label(
+            self.workspace_frame, text="Workspace", font=("Helvetica", 14, "bold")
+        )
+        self.workspace_title.grid(row=0, column=0, sticky="w", pady=(0, 10))
 
-        self.filter_version_label = tk.Label(self.filter_frame, text="Versão:")
-        self.filter_version_label.pack(side=tk.LEFT, padx=5)
+        # Filtros temperatura e limitador
+        filter_temp_frame = tk.Frame(self.workspace_frame)
+        filter_temp_frame.grid(row=1, column=0, sticky="w", pady=5)
 
-        self.filter_version_entry = tk.Entry(self.filter_frame, width=10)
-        self.filter_version_entry.pack(side=tk.LEFT, padx=5)
+        tk.Label(filter_temp_frame, text="Filtrar Temperatura:").pack(
+            side="left", padx=(0, 5)
+        )
+        self.filter_temperature_var = tk.StringVar()
+        self.filter_temperature_combobox = ttk.Combobox(
+            filter_temp_frame,
+            textvariable=self.filter_temperature_var,
+            state="readonly",
+            values=["Todas", "RT", "LT", "HT"],
+            width=10,
+        )
+        self.filter_temperature_combobox.pack(side="left")
+        self.filter_temperature_combobox.set("Todas")
 
-        self.filter_order_label = tk.Label(self.filter_frame, text="Ordem:")
-        self.filter_order_label.pack(side=tk.LEFT, padx=5)
-
-        self.filter_order_entry = tk.Entry(self.filter_frame, width=10)
-        self.filter_order_entry.pack(side=tk.LEFT, padx=5)
-
-        self.filter_temperature_label = tk.Label(self.filter_frame, text="Temperatura:")
-        self.filter_temperature_label.pack(side=tk.LEFT, padx=5)
-
-        self.filter_temperature_entry = tk.Entry(self.filter_frame, width=10)
-        self.filter_temperature_entry.pack(side=tk.LEFT, padx=5)
+        tk.Label(filter_temp_frame, text="Limitador:").pack(side="left", padx=(10, 5))
+        self.limit_var = tk.StringVar()
+        limit_values = ["Todos"] + [str(i) for i in range(5, 205, 5)]
+        self.limit_combobox = ttk.Combobox(
+            filter_temp_frame,
+            textvariable=self.limit_var,
+            state="readonly",
+            values=limit_values,
+            width=8,
+        )
+        self.limit_combobox.pack(side="left")
+        self.limit_combobox.set("Todos")
 
         self.btn_apply_filters = tk.Button(
-            self.filter_frame, text="Aplicar Filtros", command=self.apply_filters
+            filter_temp_frame, text="Aplicar Filtros", command=self.apply_filters
         )
-        self.btn_apply_filters.pack(side=tk.LEFT, padx=5)
+        self.btn_apply_filters.pack(side="left", padx=10)
 
-        # Lista de resultados com barras de rolagem
-        self.frame_results = tk.Frame(self.frame_view)
-        self.frame_results.pack(pady=10, fill=tk.BOTH, expand=True)
+        # Lista de resultados com scrollbars
+        self.frame_results = tk.Frame(self.workspace_frame)
+        self.frame_results.grid(row=2, column=0, sticky="nsew", pady=5)
+        self.frame_results.columnconfigure(0, weight=1)
+        self.frame_results.rowconfigure(0, weight=1)
 
         self.scrollbar_y = tk.Scrollbar(self.frame_results, orient=tk.VERTICAL)
         self.scrollbar_x = tk.Scrollbar(self.frame_results, orient=tk.HORIZONTAL)
+
         self.list_results = tk.Listbox(
             self.frame_results,
             width=120,
@@ -198,25 +242,19 @@ class ExcelToJsonConverter:
             xscrollcommand=self.scrollbar_x.set,
         )
         self.list_results.grid(row=0, column=0, sticky="nsew")
+
         self.scrollbar_y.config(command=self.list_results.yview)
         self.scrollbar_y.grid(row=0, column=1, sticky="ns")
+
         self.scrollbar_x.config(command=self.list_results.xview)
         self.scrollbar_x.grid(row=1, column=0, sticky="ew")
-        self.frame_results.grid_rowconfigure(0, weight=1)
-        self.frame_results.grid_columnconfigure(0, weight=1)
 
-        self.btn_refresh = tk.Button(
-            self.frame_view, text="Atualizar Visualização", command=self.refresh_view
-        )
-        self.btn_refresh.pack(pady=5)
-
-        # Arquivo JSON e pasta de Excel
+        # Inicializações
         self.json_file = "Data.json"
         self.excel_folder = r"C:\Users\rickl\Downloads\CPK"
+        self.workspace_data = []
 
-        # Atualizar lista de ordens ao iniciar
         self.update_orders_list()
-
         self.root.mainloop()
 
     def _on_mousewheel(self, event):
@@ -262,16 +300,14 @@ class ExcelToJsonConverter:
             messagebox.showinfo(
                 "Sucesso", "Arquivos Excel processados e JSON atualizado!"
             )
-            self.update_orders_list()  # Atualizar lista de ordens após processamento
+            self.update_orders_list()
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao processar ordens: {str(e)}")
 
     def process_excel(self, file_path, data):
         wb = load_workbook(file_path, data_only=True)
-
         current_version = None
         current_order = None
-
         for sheet_name in wb.sheetnames:
             if "minus" in sheet_name:
                 temp_type = "LT"
@@ -299,7 +335,6 @@ class ExcelToJsonConverter:
         production_order = self.clean_value(sheet["J3"].value)
         propellant_lot_number = self.clean_value(sheet["S3"].value)
         test_date = self.parse_date(sheet["C4"].value)
-
         temperature_c = self.clean_value(sheet["C10"].value)
 
         if version not in data:
@@ -327,7 +362,6 @@ class ExcelToJsonConverter:
             if row[0] and str(row[0]).strip().isdigit():
                 test_no = self.clean_value(row[0])
                 inflator_no = self.clean_value(row[1])
-
                 if test_no and inflator_no and test_no not in seen_tests:
                     tests.append(
                         {"test_no": int(test_no), "inflator_no": int(inflator_no)}
@@ -401,7 +435,7 @@ class ExcelToJsonConverter:
         ] = limits
 
     def update_orders_list(self):
-        """Atualiza a lista de ordens no gerenciador, ordenada por test_date e paginada."""
+        """Atualiza a lista de ordens no gerenciador, ordenada pela data mais recente primeiro."""
         # Limpar Checkbuttons existentes
         for widget in self.orders_inner_frame.winfo_children():
             widget.destroy()
@@ -409,7 +443,6 @@ class ExcelToJsonConverter:
         self.order_checkbuttons.clear()
 
         if not os.path.exists(self.json_file):
-            self.page_info.config(text="Página 0/0")
             return
 
         try:
@@ -417,43 +450,23 @@ class ExcelToJsonConverter:
                 data = json.load(f)
 
             # Coletar ordens com versão e test_date
-            self.orders_list = []
+            orders_list = []
             for version, orders in data.items():
                 for order, details in orders.items():
                     test_date = details["metadados"].get("test_date", "0000-00-00")
-                    self.orders_list.append((version, order, test_date))
+                    orders_list.append((version, order, test_date))
 
-            # Ordenar por test_date
-            self.orders_list.sort(key=lambda x: x[2] if x[2] else "0000-00-00")
+            # Ordenar por test_date (mais recente primeiro)
+            def parse_date_safe(date_str):
+                try:
+                    return datetime.strptime(date_str, "%Y-%m-%d")
+                except Exception:
+                    return datetime.min
 
-            # Calcular total de páginas
-            total_orders = len(self.orders_list)
-            self.total_pages = max(
-                1, (total_orders + self.orders_per_page - 1) // self.orders_per_page
-            )
+            orders_list.sort(key=lambda x: parse_date_safe(x[2]), reverse=True)
 
-            # Ajustar página atual se necessário
-            if self.current_page > self.total_pages:
-                self.current_page = self.total_pages
-
-            # Atualizar label da página
-            self.page_info.config(text=f"Página {self.current_page}/{self.total_pages}")
-
-            # Habilitar/desabilitar botões de navegação
-            self.prev_btn.config(
-                state=tk.NORMAL if self.current_page > 1 else tk.DISABLED
-            )
-            self.next_btn.config(
-                state=tk.NORMAL if self.current_page < self.total_pages else tk.DISABLED
-            )
-
-            # Obter ordens da página atual
-            start_idx = (self.current_page - 1) * self.orders_per_page
-            end_idx = start_idx + self.orders_per_page
-            paginated_orders = self.orders_list[start_idx:end_idx]
-
-            # Adicionar Checkbuttons para cada ordem da página
-            for idx, (version, order, test_date) in enumerate(paginated_orders):
+            # Adicionar Checkbuttons para cada ordem
+            for idx, (version, order, test_date) in enumerate(orders_list):
                 var = tk.BooleanVar()
                 self.order_vars[(version, order)] = var
                 display_text = f"Versão: {version}, Ordem: {order}, Data: {test_date}"
@@ -466,9 +479,6 @@ class ExcelToJsonConverter:
                 )
                 chk.grid(row=idx, column=0, sticky="w", padx=5, pady=2)
                 self.order_checkbuttons[(version, order)] = chk
-
-            # Resetar checkbox selecionar tudo
-            self.select_all_var.set(False)
 
             # Atualizar região de rolagem
             self.orders_canvas.configure(scrollregion=self.orders_canvas.bbox("all"))
@@ -497,52 +507,63 @@ class ExcelToJsonConverter:
         for var in self.order_vars.values():
             var.set(state)
 
-    def remove_selected_orders(self):
-        """Remove as ordens selecionadas do banco de dados."""
-        if not os.path.exists(self.json_file):
-            messagebox.showerror("Erro", "Nenhum banco de dados encontrado.")
-            return
+    def on_version_filter(self, event=None):
+        self.current_page = 1
+        self.update_orders_list()
+
+    def remove_orders_by_input(self):
         try:
+            orders_input = self.entry_orders.get().strip()
+            if not orders_input:
+                messagebox.showerror("Erro", "Por favor, insira os números das ordens.")
+                return
+
+            orders_to_remove = [order.strip() for order in orders_input.split(",")]
+
+            if not os.path.exists(self.json_file):
+                messagebox.showerror("Erro", "Nenhum banco de dados encontrado.")
+                return
+
             with open(self.json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            selected_orders = [
-                (version, order)
-                for (version, order), var in self.order_vars.items()
-                if var.get()
-            ]
+            removed = []
+            for version in list(data.keys()):
+                for order in list(data[version].keys()):
+                    if order in orders_to_remove:
+                        del data[version][order]
+                        removed.append(order)
+                        if not data[version]:
+                            del data[version]
 
-            if not selected_orders:
-                messagebox.showwarning("Aviso", "Nenhuma ordem selecionada.")
-                return
-
-            # Remover ordens selecionadas
-            for version, order in selected_orders:
-                if version in data and order in data[version]:
-                    del data[version][order]
-                    if not data[version]:  # Se a versão ficou vazia, removê-la
-                        del data[version]
-
-            # Salvar JSON atualizado
             with open(self.json_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
 
-            messagebox.showinfo("Sucesso", "Ordens selecionadas removidas com sucesso!")
+            if removed:
+                msg = f"Ordens removidas com sucesso:\n{', '.join(removed)}"
+                self.status_label.config(text=msg)
+                messagebox.showinfo("Sucesso", msg)
+            else:
+                messagebox.showwarning(
+                    "Aviso", "Nenhuma ordem correspondente encontrada."
+                )
+
+            self.entry_orders.delete(0, tk.END)
             self.update_orders_list()
 
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao remover ordens: {str(e)}")
 
-    def show_selected_orders(self):
-        """Mostrar detalhes dos ensaios selecionados na lista de visualização."""
-        # Implementar conforme necessidade, exemplo simples:
+    def send_to_workspace(self):
         selected_orders = [
             (version, order)
             for (version, order), var in self.order_vars.items()
             if var.get()
         ]
         if not selected_orders:
-            messagebox.showwarning("Aviso", "Nenhuma ordem selecionada para mostrar.")
+            messagebox.showwarning(
+                "Aviso", "Nenhuma ordem selecionada para enviar ao Workspace."
+            )
             return
 
         try:
@@ -550,121 +571,132 @@ class ExcelToJsonConverter:
                 data = json.load(f)
 
             self.list_results.delete(0, tk.END)
+            self.workspace_data = []
+
+            header = "Ensaio | Inflator | Temperatura | Tipo | Versão | Ordem"
+            self.list_results.insert(tk.END, header)
+            self.list_results.insert(tk.END, "-" * len(header))
+
             for version, order in selected_orders:
                 if version in data and order in data[version]:
                     details = data[version][order]
-                    line = f"Versão: {version} | Ordem: {order} | Data: {details['metadados'].get('test_date', '')}"
-                    self.list_results.insert(tk.END, line)
-                    # Pode adicionar mais detalhes conforme necessário
+                    temperaturas = details.get("temperaturas", {})
+                    for temp_type, temp_data in temperaturas.items():
+                        temperatura_c = temp_data.get("temperatura_c", "N/A")
+                        ensaios = temp_data.get("ensaios", [])
+                        dados_pressao = temp_data.get("dados_pressao", [])
+                        pressao_map = {
+                            item["inflator_no"]: item["pressoes"]
+                            for item in dados_pressao
+                        }
+                        for ensaio in ensaios:
+                            test_no = ensaio.get("test_no", "N/A")
+                            inflator_no = ensaio.get("inflator_no", "N/A")
+                            has_pressure_data = inflator_no in pressao_map
+                            line = f"{test_no} | {inflator_no} | {temperatura_c}°C | {temp_type} | {version} | {order}"
+                            if has_pressure_data:
+                                line += " | Dados de pressão disponíveis"
+                            else:
+                                line += " | Sem dados de pressão"
+                            self.list_results.insert(tk.END, line)
+                            self.workspace_data.append(
+                                {
+                                    "test_no": test_no,
+                                    "inflator_no": inflator_no,
+                                    "temperatura_c": temperatura_c,
+                                    "tipo": temp_type,
+                                    "versao": version,
+                                    "ordem": order,
+                                    "pressoes": pressao_map.get(inflator_no, None),
+                                }
+                            )
+
+            messagebox.showinfo("Sucesso", "Ensaios enviados ao Workspace com sucesso!")
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao mostrar ordens: {str(e)}")
-
-    def refresh_view(self):
-        try:
-            if not os.path.exists(self.json_file):
-                messagebox.showerror("Erro", "Nenhum banco de dados encontrado.")
-                return
-
-            with open(self.json_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            self.list_results.delete(0, tk.END)
-
-            version_filter = self.filter_version_entry.get().strip()
-            order_filter = self.filter_order_entry.get().strip()
-            temp_filter = self.filter_temperature_entry.get().strip()
-
-            for version, orders in data.items():
-                if version_filter and version != version_filter:
-                    continue
-
-                for order, details in orders.items():
-                    if order_filter and order != order_filter:
-                        continue
-
-                    for temp_type, temp_data in details["temperaturas"].items():
-                        if temp_filter and temp_type != temp_filter:
-                            continue
-
-                        self.list_results.insert(
-                            tk.END,
-                            f"Versão: {version}, Ordem: {order}, Temperatura: {temp_type}, "
-                            f"Meta: {details['metadados']}, Temperatura_C: {temp_data.get('temperatura_c')}, "
-                            f"Ensaios: {temp_data.get('ensaios')}, Dados_Pressao: {temp_data.get('dados_pressao')}, "
-                            f"Limites: {temp_data.get('limites')}",
-                        )
-
-            # Sincronizar checkboxes com filtro de ordem
-            self.sync_checkboxes_with_order_filter()
-
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao atualizar visualização: {str(e)}")
+            messagebox.showerror(
+                "Erro", f"Erro ao enviar ensaios ao Workspace: {str(e)}"
+            )
 
     def apply_filters(self):
-        try:
-            if not os.path.exists(self.json_file):
-                messagebox.showerror("Erro", "Nenhum banco de dados encontrado.")
-                return
+        temp_filter = self.filter_temperature_var.get()
+        limit_filter = self.limit_var.get()
 
-            with open(self.json_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        self.list_results.delete(0, tk.END)
+        header = "Ensaio | Inflator | Temperatura | Tipo | Versão | Ordem"
+        self.list_results.insert(tk.END, header)
+        self.list_results.insert(tk.END, "-" * len(header))
 
-            version_filter = self.filter_version_entry.get().strip()
-            order_filter = self.filter_order_entry.get().strip()
-            temp_filter = self.filter_temperature_entry.get().strip()
+        filtered_data = []
+        for reg in self.workspace_data:
+            if temp_filter != "Todas" and reg["tipo"] != temp_filter:
+                continue
+            filtered_data.append(reg)
 
-            self.list_results.delete(0, tk.END)
+        # Aplicar limitador
+        if limit_filter != "Todos":
+            limit = int(limit_filter)
+            filtered_data = filtered_data[:limit]
 
-            for version, orders in data.items():
-                if version_filter and version != version_filter:
-                    continue
+        # Exibir resultados filtrados
+        for reg in filtered_data:
+            line = f"{reg['test_no']} | {reg['inflator_no']} | {reg['temperatura_c']}°C | {reg['tipo']} | {reg['versao']} | {reg['ordem']}"
+            if reg["pressoes"]:
+                line += " | Dados de pressão disponíveis"
+            else:
+                line += " | Sem dados de pressão"
+            self.list_results.insert(tk.END, line)
 
-                for order, details in orders.items():
-                    if order_filter and order != order_filter:
-                        continue
+    def remove_workspace_orders_selected(self):
+        selected_orders = {
+            (version, order)
+            for (version, order), var in self.order_vars.items()
+            if var.get()
+        }
+        if not selected_orders:
+            messagebox.showwarning(
+                "Aviso", "Nenhuma ordem selecionada para remover do Workspace."
+            )
+            return
 
-                    for temp_type, temp_data in details["temperaturas"].items():
-                        if temp_filter and temp_type != temp_filter:
-                            continue
+        before_count = len(self.workspace_data)
+        self.workspace_data = [
+            reg
+            for reg in self.workspace_data
+            if (reg["versao"], reg["ordem"]) not in selected_orders
+        ]
+        after_count = len(self.workspace_data)
 
-                        self.list_results.insert(
-                            tk.END,
-                            f"Versão: {version}, Ordem: {order}, Temperatura: {temp_type}, "
-                            f"Meta: {details['metadados']}, Temperatura_C: {temp_data.get('temperatura_c')}, "
-                            f"Ensaios: {temp_data.get('ensaios')}, Dados_Pressao: {temp_data.get('dados_pressao')}, "
-                            f"Limites: {temp_data.get('limites')}",
-                        )
+        self.apply_filters()  # Atualiza a lista exibida
 
-            # Sincronizar checkboxes com filtro de ordem
-            self.sync_checkboxes_with_order_filter()
+        removed_count = before_count - after_count
+        messagebox.showinfo(
+            "Sucesso", f"{removed_count} registros removidos do Workspace."
+        )
 
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao aplicar filtros: {str(e)}")
-
-    def sync_checkboxes_with_order_filter(self):
-        """Sincroniza os checkboxes com o filtro de ordem."""
-        order_filter = self.filter_order_entry.get().strip()
-        for (version, order), var in self.order_vars.items():
-            var.set(order == order_filter and order_filter != "")
+    def clear_workspace(self):
+        self.workspace_data.clear()
+        self.list_results.delete(0, tk.END)
+        messagebox.showinfo("Sucesso", "Workspace limpo com sucesso.")
 
     def clean_value(self, value):
+        if value is None:
+            return None
         if isinstance(value, str):
-            value = value.strip().lstrip("'")
-            if value in ("", "None", "NaN"):
-                return None
-            return value
+            return value.strip()
         return value
 
     def parse_date(self, date_value):
         if isinstance(date_value, datetime):
             return date_value.strftime("%Y-%m-%d")
-        return date_value
-
-    def run(self):
-        self.root.mainloop()
+        if isinstance(date_value, str):
+            try:
+                dt = datetime.strptime(date_value, "%d.%m.%Y")
+                return dt.strftime("%Y-%m-%d")
+            except Exception:
+                return date_value
+        return None
 
 
 if __name__ == "__main__":
-    converter = ExcelToJsonConverter()
-    converter.run()
+    ExcelToJsonConverter()
