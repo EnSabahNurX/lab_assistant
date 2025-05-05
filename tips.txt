@@ -1,3 +1,0 @@
-- Adicionar um gerenciador de ordens, onde será exibido uma lista das ordens do banco de dados, com opções remover a selecionada. Organizar a ordens pela data de test_date e com opção para marcar e desmarcar cada ordem para enviar ao grupo de trabalho;
-
-- Separar um grupo de trabalho para extrair os dados que interessa, para gerar gráficos e estatísticas;
