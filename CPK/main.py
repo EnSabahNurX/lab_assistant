@@ -683,9 +683,9 @@ class ExcelToJsonConverter:
     def process_grafik(self, sheet, temp_type, data, current_version, current_order):
         valid_columns = []
         limits = {"maximums": {}, "minimums": {}}
-        for col in range(self.MIN_COLUMN, self.MAX_COLUMN):
-            min_val = clean_value(sheet.cell(row=self.MIN_LIMIT_ROW, column=col).value)
-            max_val = clean_value(sheet.cell(row=self.MAX_LIMIT_ROW, column=col).value)
+        for col in range(config.MIN_COLUMN, config.MAX_COLUMN):
+            min_val = clean_value(sheet.cell(row=config.MIN_LIMIT_ROW, column=col).value)
+            max_val = clean_value(sheet.cell(row=config.MAX_LIMIT_ROW, column=col).value)
             if min_val or max_val:
                 valid_columns.append(col)
                 ms = col - 2
@@ -709,7 +709,7 @@ class ExcelToJsonConverter:
 
         pressure_data = []
         blank_line_count = 0
-        row_idx = self.PRESSURE_DATA_START_ROW
+        row_idx = config.PRESSURE_DATA_START_ROW
 
         for inflator_no in inflator_nos:
             is_blank = True
